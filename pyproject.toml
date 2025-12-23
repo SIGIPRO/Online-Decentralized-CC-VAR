@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "distcell"
+version = "0.0.0"
+description = "A generic implementation of Distributed Cellular Complex Algorithms"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [{name = "Abdullah Canbolat"}]
+license = {text = "MIT"}
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages]
+find = {where = ["src"]}
