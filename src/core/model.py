@@ -46,7 +46,7 @@ class BaseMixingModel:
     A generic Coordination model.
     Handles parameter mixing, gradient tracking, and auxiliary variables.
     """
-    def __init__(self, initial_aux_vars=None):
+    def __init__(self, initial_aux_vars={}, weights={}, eta={}):
         """
         Args:
             initial_aux_vars: Variables like z_i (Gradient Tracking) 
@@ -54,8 +54,10 @@ class BaseMixingModel:
         """
         self._aux = initial_aux_vars
         self._history = {} # To store previous values for drift correction
+        self._weights = weights # Graph topology weights for mixing
+        self._eta = eta
 
-    def mix_parameters(self, local_params, neighbor_params_dict, weights):
+    def mix_parameters(self, local_params, neighbor_params_dict):
         """
         Performs the mixing/consensus of parameters.
         

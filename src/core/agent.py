@@ -75,25 +75,25 @@ class BaseAgent:
         # 4. MIXING & UPDATING
         # --------------------
         # The mixing model applies Gradient Tracking / Consensus logic
-        # params_new = mix(theta_i, {theta_j}, grad_i)
-        new_theta = self._mixing_model.mix(
-            local_theta=self._model.get_params(),
-            neighbor_thetas=neighbor_params,
-            local_gradient=local_grad
-        )
+    
+
+        if neighbor_params != {}:
+            self._mixing_model.update_auxiliary(local_params=self._model.get_params(),
+                                            neighbor_params_dict=neighbor_params)
+            self._mixing_model.mix_parameters(local_params=self._model.get_params(),
+                                            neighbor_params_dict=neighbor_params)
+    
+   
+
+        # 5. Correction & Set New Params
+
+        new_theta = self._mixing_model.apply_correction(local_gradient=local_grad)
         self._model.set_params(new_theta)
 
-        # self.update_aux(**kwargs)
     # 
     def estimate(self, **kwargs):
         return self._model.estimate(**kwargs)
-    
-    def mix_params(self, incoming_params = None, **kwargs):
-        params = self._mixing_model.get_correction(self._model.get_params(), incoming_params)
-        self._model.set_params(params)
 
-    # def update_aux(self, **kwargs):
-    #     raise NotImplementedError('This is a base class. Please implement update_aux method in the derived class.')
 
     def _append_data(self, local_data, incoming_data): 
         raise NotImplementedError('This is a base class. Please implement _append_data method in the derived class.')
