@@ -9,16 +9,18 @@ class CCVARModel(BaseModel):
         self._param_slices = []
         self._param_length = 0
 
-    def get_gradient(self, local_data, external_data, **kwargs):
+    def get_gradient(self, aggregated_data, **kwargs):
 
         featureDict = self._algorithm._feature_gen()
         grad = []
 
-        for key in self._algorithm._data_keys:
-            if key not in local_data or key not in external_data: continue
+        inputData = aggregated_data.get_data()
+        ## NOTE: give external_data even in noncommunication rounds as 0, or any of the heuristics.
 
-            inputData = np.hstack([local_data[key], external_data[key]])
-            ## NOTE: give external_data even in noncommunication rounds as 0, or any of the heuristics.
+        for key in self._algorithm._data_keys:
+            if key not in inputData: continue
+
+   
             
             S = featureDict[key]
             target = inputData[key].reshape(-1,1)

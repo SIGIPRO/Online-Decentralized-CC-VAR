@@ -8,7 +8,7 @@ class BaseModel:
         self._state = None # To store temporal states, e.g., VAR history
         self._algorithm = algorithm
 
-    def get_gradient(self, local_data, external_data, **kwargs):
+    def get_gradient(self, aggregated_data, **kwargs):
         """
         Computes the gradient of the local loss function f_i.
         
