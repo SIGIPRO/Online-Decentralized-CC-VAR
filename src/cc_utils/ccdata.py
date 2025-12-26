@@ -54,6 +54,17 @@ class CellularComplexInMemoryData:
         self._T_total = T
         self._curr_iteration = 0
 
+    def append_data(self, incoming_data_map):
+        ## !!!! CHECK THIS FUNCTION FOR CORRECTNESS !!!! There should be no index mismatch
+        for cluster_id in incoming_data_map:
+            incoming_data = incoming_data_map[cluster_id]
+            for key in incoming_data:
+                if key in self._data:
+                    self._data[key] = np.hstack((self._data[key], incoming_data[key]))
+                else:
+                    self._data[key] = incoming_data[key]
+        
+
 class ZeroCCData(CellularComplexInMemoryData):
     def __init__(self, shape_dict):
         data = {}

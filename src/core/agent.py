@@ -29,8 +29,6 @@ class BaseAgent:
         self._protocol = protocol(*protocolParams)      # When/How to talk
         self._mixing_model = mix(*mixingParams)          # How to merge weights (DGT/ADMM)
         self._model = model(*modelParams)                # Local Task Model
-        # self._model = model(*self._add_model_params(modelParams)) # Topological Physics
-        # self._aux = aux
 
     def update(self, **kwargs):
         """
@@ -107,12 +105,6 @@ class BaseAgent:
                 incoming_data_map[cluster_id] = data
 
         return incoming_data_map
-
-
-    # def _append_data(self, local_data, incoming_data): 
-    #     raise NotImplementedError('This is a base class. Please implement _append_data method in the derived class.')
-    # def _add_model_params(self, modelParams):
-    #     raise NotImplementedError('This is a base class. Please implement _add_model_params method in the derived class.')
 
     
 
