@@ -1,5 +1,4 @@
 from src.core.agent import BaseAgent
-import numpy as np
 
 class DataHolderAgent(BaseAgent):
 
