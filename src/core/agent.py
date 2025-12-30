@@ -15,18 +15,15 @@ REWARD: Reward is the error achieved by the Model
 class BaseAgent:
     _total_agents = 0
     
-    def __init__(self, model, modelParams, Nin, Nout, data, dataParams, protocol, protocolParams, mix, mixingParams):
+    def __init__(self, model, modelParams, data, dataParams, protocol, protocolParams, mix, mixingParams):
         self._agent_id = BaseAgent._total_agents
         BaseAgent._total_agents += 1
-        
-        self._Nout = Nout  # Dictionary: {cluster_id: topology_info}
-        self._Nin = Nin    # Local topology info
-        self._data = data(*dataParams) # Local Data Handler
 
-        self._neighbor_clusters = list(self._Nout.keys())
+        self._data = data(*dataParams) # Local Data Handler
 
         # Logic separation:
         self._protocol = protocol(*protocolParams)      # When/How to talk
+        self._neighbor_clusters = self._protocol.neighbors  # Get neighbor clusters from protocol
         self._mixing_model = mix(*mixingParams)          # How to merge weights (DGT/ADMM)
         self._model = model(*modelParams)                # Local Task Model
 

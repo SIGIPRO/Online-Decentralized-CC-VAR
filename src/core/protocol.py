@@ -1,9 +1,11 @@
 class BaseProtocol:
 
-    def __init__(self, K_data, K_param, heuristic=None):
+    def __init__(self, K_data, K_param, neighbors, heuristic=None):
         self._K_data = K_data
         self._K_param = K_param
         self._heuristic = heuristic
+
+        self._neighbors = neighbors  # List of neighbor cluster IDs
 
         self._send_params = dict()
         self._send_data = dict()
@@ -32,4 +34,8 @@ class BaseProtocol:
 
     def communicate(self):
         raise NotImplementedError('This is a base class. Please implement communicate method in the derived class.')
+    
+    @property
+    def neighbors(self):
+        return self._neighbors
     
