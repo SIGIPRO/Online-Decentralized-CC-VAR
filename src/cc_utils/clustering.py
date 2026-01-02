@@ -1,6 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, Optional, Tuple, Any, Set
+from typing import Dict, Iterable, Optional, Tuple, Any, Set, TypeVar, List
+from collections.abc import Hashable
 from itertools import combinations
 import numpy as np
 from numpy.linalg import matrix_power
@@ -15,12 +16,13 @@ class CellularComplexFakeClustering:
     """
 
     cellularComplex : Dict[int, np.ndarray]
-    clusteringParameters: Dict[str, float]
+    clusteringParameters: Dict[str, int]
     
     Nin : Dict[int, Any] = field(default_factory=dict)
     Nout : Dict[Tuple[int,int], Any] = field(default_factory=dict)
     interface: Dict[Tuple[int,int], Any] = field(default_factory = dict)
     clustered_complexes : Dict[int, Dict[int, np.ndarray]] = field(default_factory=dict)
+    global_to_local_idx : Dict[int, Dict[int, List[int]]] = field(default_factory=dict)
     agent_graph : Dict[int, Set] = field(default_factory=dict)
     upper_lower_adjacency: Optional[list[Dict[int, list[int]]]] = None
 
@@ -58,9 +60,6 @@ class CellularComplexFakeClustering:
         head_of, parent, depth = form_clusters_tree_bfs(G = G, clusterheads = heads, d = d)
 
 
-        # for cell, h in head_of.items():
-        #     self.Nin[h].append(cell)
-        #     self.Nout[h].append(h) ## Check this line later
         Q = int(self.clusteringParameters['Q-hop'])
         assert Q>=0, "Q should be greater or equal to 0!!!"
         
@@ -70,21 +69,13 @@ class CellularComplexFakeClustering:
         np.fill_diagonal(a = adjacency_self, val = 0)
         adjacency_self = adjacency_self != 0
 
-        # if B_up is not None:
-        #     adjacency_upper = laplacian_Q @ B_up
-        #     adjacency_upper = adjacency_upper != 0
-        # if B_down is not None:
-        #     adjacency_lower = B_down @ laplacian_Q 
-        #     adjacency_lower = adjacency_lower != 0
-
         # Build per-cell adjacency dictionaries across all other dimensions
         self.upper_lower_adjacency = self._compute_upper_lower_adjacency(
             base_dim=requested_dim,
             max_dim=max_dim,
         )
 
-        # self.Nin[requested_dim] = dict()
-        # self.Nout[requested_dim] = dict()
+
         for cell, h in head_of.items():
             if h not in self.Nin:
                 self.Nin[h] = dict()
@@ -101,17 +92,12 @@ class CellularComplexFakeClustering:
                 self.Nin[h][dim].update(adjacents[dim])
 
 
-        # self.agent_graph = dict()
         for h1, h2 in combinations(heads, 2):
                 key = (h1, h2)
 
                 if h1 not in self.agent_graph.keys():
                     self.agent_graph[h1] = set()
 
-                # try:
-                #     self.agent_graph[heads_iterator._i]
-                # except:
-                #     self.agent_graph[heads_iterator._i].append([])
 
                 if key not in self.Nout:
                     self.Nout[key] = dict()
@@ -168,7 +154,16 @@ class CellularComplexFakeClustering:
                 
                 if h1 not in self.clustered_complexes:
                     self.clustered_complexes[h1] = dict()
-                self.clustered_complexes[h1][dim] = self.cellularComplex[dim][list(lower_adjacencies), list(dim_adjacencies)]
+                    self.global_to_local_idx[h1] = dict()
+                if dim not in self.global_to_local_idx[h1]:
+                    self.global_to_local_idx[h1][dim] = list()
+
+                global_idx = list(lower_adjacencies)
+                # local_idx = [i for i in range(len(global_idx))]
+                self.clustered_complexes[h1][dim] = self.cellularComplex[dim][np.ix_(global_idx, list(dim_adjacencies))]
+            
+
+                self.global_to_local_idx[h1][dim] = global_idx
 
         # convert sets to lists for portability
         for h in self.Nin:
@@ -183,41 +178,6 @@ class CellularComplexFakeClustering:
             for dim in self.interface[key]:
                 if isinstance(self.interface[key][dim], set):
                     self.interface[key][dim] = list(self.interface[key][dim])
-
-
-                
-
-
-                
-                
-                    
-
-                
-                
-        
-
-
-
-
-            
-
-
-
-
-
-
-        # for cluster_id in self.Nin.keys():
-        #     pass
-        # for h in heads:
-
-        #     self.Nin[i].append(h)
-        #     for node, head in parent.items():
-        #         if head == h:
-        #             self.Nin[i].append(node)
-
-        #     i += 1
-
-        # self.Nin = {i : head_of[h] for h in head_of.keys()}
     
 
     def _infer_cell_counts(self) -> Dict[int, int]:
@@ -277,17 +237,7 @@ class CellularComplexFakeClustering:
 
 
 ## A ChatGPT implementation of the correction of the ad-hoc clustering method for d-hop clustering.
-
-
-
-Node = int
-
-@dataclass
-class MaxMinDClusterResult:
-    clusterheads: set[Node]
-    head_of: Dict[Node, Node]     # node -> clusterhead label
-    parent: Dict[Node, Optional[Node]]  # node -> parent in cluster tree (None for head/unassigned)
-    depth: Dict[Node, int]        # hop distance to head (0 for head)
+Node = TypeVar("Node", bound=Hashable)
 
 
 def _injective_value(score: Dict[Node, Any], node: Node) -> Tuple[Any, Node]:
@@ -405,50 +355,3 @@ def form_clusters_tree_bfs(
 
     # nodes not reached within d hops remain unassigned (should not happen if heads form a d-dominating set)
     return head_of, parent, depth
-
-
-# def maxmin_d_cluster(
-#     G: nx.Graph,
-#     d: int,
-#     score: Optional[Dict[Node, Any]] = None,
-# ) -> MaxMinDClusterResult:
-#     """
-#     Full corrected pipeline: head election (2d max-min) + tree cluster formation (<= d hops).  [oai_citation:5‡dl.ifip.org](https://dl.ifip.org/db/conf/networking/networking2007/MazieuxMB07.pdf)
-#     """
-#     heads = select_clusterheads_maxmin(G, d=d, score=score)
-#     head_of, parent, depth = form_clusters_tree_bfs(G, heads, d=d, score=score)
-#     return MaxMinDClusterResult(clusterheads=heads, head_of=head_of, parent=parent, depth=depth)
-
-
-# def clusters_are_connected(G: nx.Graph, head_of: Dict[Node, Node]) -> bool:
-#     # each cluster should induce a connected subgraph (tree construction ensures it for assigned nodes)
-#     by_h: Dict[Node, list[Node]] = {}
-#     for v, h in head_of.items():
-#         by_h.setdefault(h, []).append(v)
-#     return all(nx.is_connected(G.subgraph(vs)) for vs in by_h.values() if len(vs) > 1)
-       
-
-    
-
-    # def fit(self):
-    #     """Fit the clustering model using multi-source shortest path Voronoi method."""
-    #     self.clustering_results = []
-    #     for d in range(self.dim + 1):
-    #         laplacian = self.laplacians[d]
-    #         boundary = self.boundaries[d]
-    #         if self.source_simplices is not None:
-    #             sources = self.source_simplices[d]
-    #         else:
-    #             sources = np.random.choice(laplacian.shape[0], self.num_clusters, replace=False)
-    #         clustering = self._multi_source_shortest_path_voronoi(laplacian, boundary, sources)
-    #         self.clustering_results.append(clustering)
-
-    # def _multi_source_shortest_path_voronoi(self, laplacian: sp.csr_matrix, boundary: sp.csr_matrix, sources: np.ndarray) -> np.ndarray:
-    #     """Perform multi-source shortest path Voronoi clustering.
-
-    #     Args:
-    #         laplacian (sp.csr_matrix): Hodge-Laplacian matrix.
-    #         boundary (sp.csr_matrix): Boundary matrix.
-    #         sources (np.ndarray): Indices of source simplices.
-    #     """
-    #     return np.zeros()

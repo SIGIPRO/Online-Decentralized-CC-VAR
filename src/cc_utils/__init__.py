@@ -1,1 +1,2 @@
-from ccdata import CellularComplexInMemoryData, ZeroCCData
+from .ccdata import CellularComplexInMemoryData, ZeroCCData
+from .clustering import CellularComplexFakeClustering

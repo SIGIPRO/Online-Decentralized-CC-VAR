@@ -67,27 +67,84 @@ class CellularComplexInMemoryData:
 ## A data handler that mimics partial data sharning in CC settings. In this example, each cluster completely knows the partial data but these are exchanged when append_data is called. append_data only takes average of the partial_data inside the object and the incoming partial data. More complex strategies are left for future work.
 
 class CCIMPartialData(CellularComplexInMemoryData):
-    def __init__(self, data, relevant_cells_dict):
+    def __init__(self, data, interface, Nout, Nex, global_idx):
         super().__init__(data)
-        self.relevant_cells_dict = relevant_cells_dict  # {cluster_id: [list of relevant cell indices]}
+
+        # self._Nout = Nout
+        # self._global_idx = global_idx
+        # self._interface = interface
+        # self._out_slices = dict()
+        self._interface = interface
+        self._global_idx = global_idx
+        self._Nex = Nex
+        
+
+     
+
+
+        # self.relevant_cells_dict = {cluster_head: self._out_slices[cluster_head] for cluster_head in Nout}
+        self._get_partial_data( Nout = Nout)
+
+    ## TODO: HANDLE KEY IN DATA, NO NEED TO SAVE OUT AND INTERFACE SLICES, IT SHOULD BE HANDLED IN APPEND_DATA
+    def _get_partial_data(self, Nout):
+        self._interface_data = dict()
+
+        for cluster_head in Nout:
+            # self._out_slices[cluster_head] = [self._global_idx.index(gidx) for gidx in Nout[cluster_head]]
+            # self._interface_slices[cluster_head] = [self._global_idx.index(gidx) for gidx in interface[cluster_head]]
+            for key in self._data:
+                out_slices = [self._global_idx[key].index(gidx) for gidx in Nout[cluster_head][key]]
+                interface_slices = [self._global_idx[key].index(gidx) for gidx in self._interface[cluster_head][key]]
+                
+                self._interface_data[cluster_head][key] = np.array([self._data[key][ifs, :] for ifs in interface_slices])
+
+                self._data[key][out_slices, :] = 0
+                self._data[key][interface_slices, :] = 0
+
+
+    def export_data(self, target):
+        pass
     
-    # def get_relevant_data_for_cluster(self, cluster_id):
-    #     relevant_indices = self.relevant_cells_dict.get(cluster_id, [])
-    #     relevant_data = {}
-    #     for key in self._data:
-    #         relevant_data[key] = self._data[key][relevant_indices, :]
-    #     return relevant_data
     
     def append_data(self, incoming_data_map):
         for cluster_id in incoming_data_map:
-            incoming_data = incoming_data_map[cluster_id]
-            relevant_indices = self.relevant_cells_dict.get(cluster_id, [])
-            for key in incoming_data:
-                if key in self._data:
-                    # Average the relevant parts
-                    self._data[key][relevant_indices[key], :] = 0.5 * (self._data[key][relevant_indices[key], :] + incoming_data[key][relevant_indices, :])
-                else:
-                    self._data[key] = incoming_data[key]
+            incoming_data = incoming_data_map.get(cluster_id, None)
+
+            if incoming_data is None:
+                continue
+
+            if incoming_data['t'] != self._curr_iteration:
+                continue
+
+            for key in self._current_data:
+                # outIdx = [self._global_idx.index(gidx) for gidx in incoming_data['ogidx'][key]]
+                # interfaceIdx = [self._global_idx.index(gidx) for gidx in incoming_data['igidx'][key]]
+                i = 0
+                for gidx in incoming_data['ogidx'][key]:
+                    dataIdx = self._global_idx[key].index(gidx)
+                    self._current_data[key][dataIdx] = incoming_data['odata'][key][i]
+                    i += 1
+
+                i = 0
+                for gidx in incoming_data['igidx'][key]:
+                    dataIdx = self._global_idx[key].index(gidx)
+                    intIdx= self._interface[cluster_id][key].index(gidx)
+
+                    self._current_data[key][dataIdx] = 0.5 * (incoming_data['idata'][key][i] + self._interface_data[cluster_id][key][intIdx])
+                    i += 1
+
+            
+
+
+
+
+            # relevant_indices = self.relevant_cells_dict.get(cluster_id, [])
+            # for key in incoming_data:
+            #     if key in self._data:
+            #         # Average the relevant parts
+            #         self._data[key][relevant_indices[key], :] = 0.5 * (self._data[key][relevant_indices[key], :] + incoming_data[key][relevant_indices, :])
+            #     else:
+            #         self._data[key] = incoming_data[key]
 class ZeroCCData(CellularComplexInMemoryData):
     def __init__(self, shape_dict):
         data = {}
