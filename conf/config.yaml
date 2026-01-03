@@ -1,0 +1,14 @@
+defaults:
+  - dataset: ocean
+  - experiment: base
+  - agent: zero_padder
+  - model: ccvar
+  - mixing: kgt
+  - protocol: kstep
+  - clustering: default
+  - paths: local
+  - _self_
+
+hydra:
+  job:
+    chdir: false
