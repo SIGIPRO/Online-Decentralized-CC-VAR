@@ -94,6 +94,7 @@ class CellularComplexFakeClustering:
 
         for h1, h2 in combinations(heads, 2):
                 key = (h1, h2)
+                key_rev = (h2, h1)
 
                 if h1 not in self.agent_graph.keys():
                     self.agent_graph[h1] = set()
@@ -102,6 +103,9 @@ class CellularComplexFakeClustering:
                 if key not in self.Nout:
                     self.Nout[key] = dict()
                     self.Nout[key][requested_dim] = set()
+                if key_rev not in self.Nout:
+                    self.Nout[key_rev] = dict()
+                    self.Nout[key_rev][requested_dim] = set()
 
                 
                 self.interface[key] = dict()
@@ -119,6 +123,9 @@ class CellularComplexFakeClustering:
                 for cell in self.Nin[h1][requested_dim]:
                     requested_adj = self.Nin[h2][requested_dim] & set(np.flatnonzero(adjacency_self[cell]))
                     self.Nout[key][requested_dim].update(requested_adj)
+                for cell in self.Nin[h2][requested_dim]:
+                    requested_adj = self.Nin[h1][requested_dim] & set(np.flatnonzero(adjacency_self[cell]))
+                    self.Nout[key_rev][requested_dim].update(requested_adj)
 
                 for dim in (set(dims_h1.keys()) & set(dims_h2.keys()) - {requested_dim}):
                     if dim not in self.Nout[key]:
@@ -127,6 +134,12 @@ class CellularComplexFakeClustering:
                         adjacents = set(self.upper_lower_adjacency[cell].get(dim, []))
                         adjacents -= self.interface.get(key, {}).get(dim, set())
                         self.Nout[key][dim].update(adjacents)
+                    if dim not in self.Nout[key_rev]:
+                        self.Nout[key_rev][dim] = set()
+                    for cell in self.Nout[key_rev][requested_dim]:
+                        adjacents = set(self.upper_lower_adjacency[cell].get(dim, []))
+                        adjacents -= self.interface.get(key, {}).get(dim, set())
+                        self.Nout[key_rev][dim].update(adjacents)
 
         for h1 in heads:
             for h2 in self.agent_graph.get(h1, set()):

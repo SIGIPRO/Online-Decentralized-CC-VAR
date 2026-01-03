@@ -1,6 +1,6 @@
 import numpy as np
 from src.core import BaseAgent
-from src.cc_utils import CellularComplexInMemoryData, CellularComplexFakeClustering
+from src.cc_utils import CCIMPartialData, CellularComplexFakeClustering
 from src.implementations.protocols import KStepProtocol
 from src.implementations.mixing import KGTMixingModel
 from src.implementations.models import CCVARModel
@@ -79,16 +79,41 @@ if __name__ == "__main__":
     T = None
     agent_list = []
     for cluster_head in clusters.clustered_complexes:
-        ## TODO: Complete processed_data
         processed_data = dict()
+        global_idx = clusters.global_to_local_idx[cluster_head]
         for dim in cc_data:
-            processed_data[dim] = cc_data[dim][clusters.global_to_local_idx,:]
+            processed_data[dim] = cc_data[dim][global_idx[dim],:]
+        
+        interface = dict()
+        for head_tuple in clusters.interface:
+            try: idx_head = head_tuple.index(cluster_head)
+            except: continue
+            idx_neighbor = 1 - idx_head
+            interface[head_tuple[idx_neighbor]] = clusters.interface[head_tuple]
 
+        Nout = dict()
+        Nex = dict()
+
+        for head_tuple in clusters.Nout:
+            if cluster_head not in head_tuple: continue
+
+            if cluster_head == head_tuple[0]:
+                Nout[head_tuple[1]] = clusters.Nout[head_tuple]
+                
+            else:
+                Nex[head_tuple[0]] = clusters.Nout[head_tuple]
+
+        dataParams = (processed_data, 
+                      interface,
+                      Nout,
+                      Nex,
+                      global_idx)
+        ## TODO: Check BaseProtocol and KStepProtocol
         currAgent = BaseAgent(
             model=CCVARModel,
             modelParams=(ccvar_params,),
-            data=CellularComplexInMemoryData,
-            dataParams=(processed_data),
+            data=CCIMPartialData,
+            dataParams=dataParams,
             protocol=KStepProtocol,
             protocolParams=(1, 5),  # send data every step, parameters every 5 steps
             mix=KGTMixingModel,
