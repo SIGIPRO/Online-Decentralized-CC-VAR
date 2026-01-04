@@ -3,9 +3,14 @@ from src.core import BaseModel
 import numpy as np
 
 class CCVARModel(BaseModel):
-    def __init__(self, ccvarParams):
+    def __init__(self, algorithmParam, cellularComplex):
+        ccvarParams = (algorithmParam, cellularComplex)
         algorithm = CCVAR(*ccvarParams)
-        super().__init__(initial_params=algorithm._theta, algorithm=algorithm)
+        initial_params = []
+        for key in algorithm._data_keys:
+            initial_params.append(algorithm._theta[key])
+        initial_params = np.vstack(initial_params)
+        super().__init__(initial_params=initial_params, algorithm=algorithm)
         self._param_slices = []
         self._param_length = 0
 
@@ -19,8 +24,6 @@ class CCVARModel(BaseModel):
 
         for key in self._algorithm._data_keys:
             if key not in inputData: continue
-
-   
             
             S = featureDict[key]
             target = inputData[key].reshape(-1,1)
@@ -53,7 +56,7 @@ class CCVARModel(BaseModel):
         super().set_params(new_params)
         for key in self._algorithm._data_keys:
             param_slice = self._algorithm._param_slices[key]
-            self._algorithm._theta_dict[key] = new_params[param_slice].reshape(-1,1)
+            self._algorithm._theta[key] = new_params[param_slice].reshape(-1,1)
 
     def estimate(self, input_data, **kwargs):
         return self._algorithm._forecast(steps = kwargs.get('steps', 1))

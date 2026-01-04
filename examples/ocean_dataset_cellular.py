@@ -1,29 +1,33 @@
 import numpy as np
 from src.core import BaseAgent
-from src.cc_utils import CCIMPartialData, CellularComplexFakeClustering
-from src.implementations.protocols import KStepProtocol
-from src.implementations.mixing import KGTMixingModel
-from src.implementations.models import CCVARModel
+from src.cc_utils import CCIMPartialData 
+# CellularComplexFakeClustering
+# from src.implementations.protocols import KStepProtocol
+# from src.implementations.mixing import KGTMixingModel
+# from src.implementations.models import CCVARModel
 import scipy.io as sio # type: ignore[import-untyped]
 from pathlib import Path
 import hydra
+from hydra.utils import instantiate
 from omegaconf import DictConfig
 
 
-
-@hydra.main(version_base=None, config_path='../conf')
-def main(cfg: DictConfig):
+def load_data(datasetParams):
         # 1. Setup Paths
-    dataset_name = "noaa_coastwatch_cellular"
+    # dataset_name = "noaa_coastwatch_cellular"
+    dataset_name = datasetParams.dataset_name
+    data_name = datasetParams.data_name
+    adjacencies_name = datasetParams.adj_name
     current_dir = Path.cwd() 
     root_name = (current_dir / ".." / ".." / "data" / "Input").resolve()
-    output_dir = (current_dir / ".." / ".." / "data" / "Output" / dataset_name / "Figures").resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
+
 
     # 2. Load Data
     try:
-        m = sio.loadmat(root_name / dataset_name / "data_oriented_mov.mat")
-        topology = sio.loadmat(root_name / dataset_name / "adjacencies_oriented.mat")
+        # m = sio.loadmat(root_name / dataset_name / "data_oriented_mov.mat")
+        m = sio.loadmat(root_name / dataset_name / data_name)
+        # topology = sio.loadmat(root_name / dataset_name / "adjacencies_oriented.mat")
+        topology = sio.loadmat(root_name / dataset_name / adjacencies_name)
     except FileNotFoundError:
         print("Error: Data files not found. Check paths.")
         exit()
@@ -51,33 +55,49 @@ def main(cfg: DictConfig):
         1: topology['B1'].astype(float),
         2: topology['B2'].astype(float)
     }
-    clusteringParameters = {
-        'd' : 10,
-        'dim' : 0,
-        'Q-hop' : 5
-    }
+    return cc_data, cellularComplex
 
-    clusters = CellularComplexFakeClustering(cellularComplex=cellularComplex, clusteringParameters=clusteringParameters)
+def get_output_dir(dataset_name):
+    current_dir = Path.cwd() 
+    output_dir = (current_dir / ".." / ".." / "data" / "Output" / dataset_name / "Figures").resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    return output_dir
+
+
+@hydra.main(version_base=None, config_path='../conf')
+def main(cfg: DictConfig):
+    outputDir = get_output_dir(cfg.dataset.dataset_name)
+    cc_data, cellularComplex = load_data(cfg.dataset)
+
+    # clusteringParameters = {
+    #     'd' : 10,
+    #     'dim' : 0,
+    #     'Q-hop' : 5
+    # }
+
+    # clusters = CellularComplexFakeClustering(cellularComplex=cellularComplex, clusteringParameters=cfg.clustering)
+    clusters = instantiate(config=cfg.clustering, cellularComplex=cellularComplex)
     
-    mixing_params = (
-        {"tracking": {"self": 0.0}, "correction": 0.0},  # initial_aux_vars
-        {"self": 1.0, "cluster_1": 0.5},                 # weights
-        {"K": 1.0, "c": 0.01, "s": 1.0},                 # eta hyperparameters
-    )
+    # mixing_params = (
+    #     {"tracking": {"self": 0.0}, "correction": 0.0},  # initial_aux_vars
+    #     {"self": 1.0, "cluster_1": 0.5},                 # weights
+    #     {"K": 1.0, "c": 0.01, "s": 1.0},                 # eta hyperparameters
+    # )
 
-    ## TODO: Complete ccvar_params
-    algorithmParam = {
-        'Tstep': 6,
-        'P': 2,
-        'K': [2, (2, 2), 2],     
-        'mu': [0, (0, 0), 0],    
-        'lambda': 0.01,
-        'gamma': 0.98,
-        'enabler': [True, True, True], 
-        'FeatureNormalzn': True,
-        'BiasEn': True
-    }
-    ccvar_params = (algorithmParam, cellularComplex)
+    # algorithmParam = {
+    #     'Tstep': 6,
+    #     'P': 2,
+    #     'K': [2, (2, 2), 2],     
+    #     'mu': [0, (0, 0), 0],    
+    #     'lambda': 0.01,
+    #     'gamma': 0.98,
+    #     'enabler': [True, True, True], 
+    #     'FeatureNormalzn': True,
+    #     'BiasEn': True
+    # }
+    # ccvar_params = (algorithmParam, cellularComplex)
+    # ccvar_params = (cfg.model.algorithmParam, cellularComplex)
     T = None
     agent_list = []
     for cluster_head in clusters.clustered_complexes:
@@ -110,17 +130,36 @@ def main(cfg: DictConfig):
                       Nout,
                       Nex,
                       global_idx)
-        ## TODO: Check BaseProtocol and KStepProtocol
+        # K_data = getattr(cfg.protocol, "K_data", 1)
+        # K_param = getattr(cfg.protocol, "K_param", 1)
+        protocol = instantiate(cfg.protocol)
+        ccvarmodel = instantiate(cfg.model, cellularComplex = clusters.clustered_complexes[cluster_head]) ## Check the usage of clusters 
+        ccdata = CCIMPartialData(*dataParams)
+        mixing = instantiate(cfg.mixing)
+        imputer = instantiate(cfg.imputer)
+        ## TODO 1: Check if mixing is complying with the data, model, protocol. (Codex controlled it)
+        ## TODO 2:  Check if imputer is complying with the data, model, protocol and mixing.
+        ## TODO 3: Check if agent is complying with the data, model, protocol, mixing and imputer.
+        ## TODO 4: Implement metric, results plotter and cellular complex plotter.
         currAgent = BaseAgent(
-            model=CCVARModel,
-            modelParams=(ccvar_params,),
-            data=CCIMPartialData,
-            dataParams=dataParams,
-            protocol=KStepProtocol,
-            protocolParams=(1, 5),  # send data every step, parameters every 5 steps
-            mix=KGTMixingModel,
-            mixingParams=mixing_params,
+            cluster_id = cluster_head,
+            model = ccvarmodel,
+            data = ccdata,
+            protocol = protocol,
+            mix = mixing,
+            imputer = imputer,
+            neighbors = clusters.agent_graph[cluster_head] #Check the usage of clusters
         )
+        # currAgent = BaseAgent(
+        #     model=CCVARModel,
+        #     modelParams=(ccvar_params,),
+        #     data=CCIMPartialData,
+        #     dataParams=dataParams,
+        #     protocol=KStepProtocol,
+        #     protocolParams=(1, 5),  # send data every step, parameters every 5 steps
+        #     mix=KGTMixingModel,
+        #     mixingParams=cfg.mixing,
+        # )
         agent_list.append(currAgent)
 
         if T is None:

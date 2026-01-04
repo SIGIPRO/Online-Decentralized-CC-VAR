@@ -1,7 +1,7 @@
 defaults:
   - dataset: ocean
   - experiment: base
-  - agent: zero_padder
+  - imputer: zero_padder
   - model: ccvar
   - mixing: kgt
   - protocol: kstep

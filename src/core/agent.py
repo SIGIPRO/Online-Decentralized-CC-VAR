@@ -13,19 +13,28 @@ REWARD: Reward is the error achieved by the Model
 
 """
 class BaseAgent:
-    _total_agents = 0
+    # _total_agents = 0
     
-    def __init__(self, model, modelParams, data, dataParams, protocol, protocolParams, mix, mixingParams):
-        self._agent_id = BaseAgent._total_agents
-        BaseAgent._total_agents += 1
+    # def __init__(self, model, modelParams, data, dataParams, protocol, protocolParams, mix, mixingParams):
+    def __init__(self, cluster_id, model, data, protocol, mix, imputer, neighbors):
+        # self._agent_id = BaseAgent._total_agents
+        # BaseAgent._total_agents += 1
+        self._cluster_id = cluster_id
 
-        self._data = data(*dataParams) # Local Data Handler
+        self._data = data
+        self._model = model
+        self._protocol = protocol
+        self._mixing_model = mix
+        self._imputer = imputer
+        self._neighbor_clusters = neighbors
+
+        # self._data = data(*dataParams) # Local Data Handler
 
         # Logic separation:
-        self._protocol = protocol(*protocolParams)      # When/How to talk
-        self._neighbor_clusters = self._protocol.neighbors  # Get neighbor clusters from protocol
-        self._mixing_model = mix(*mixingParams)          # How to merge weights (DGT/ADMM)
-        self._model = model(*modelParams)                # Local Task Model
+        # self._protocol = protocol(*protocolParams)      # When/How to talk
+        # self._neighbor_clusters = self._protocol.neighbors  # Get neighbor clusters from protocol
+        # self._mixing_model = mix(*mixingParams)          # How to merge weights (DGT/ADMM)
+        # self._model = model(*modelParams)                # Local Task Model
 
     def update(self, **kwargs):
         """
