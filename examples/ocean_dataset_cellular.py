@@ -6,11 +6,13 @@ from src.implementations.mixing import KGTMixingModel
 from src.implementations.models import CCVARModel
 import scipy.io as sio # type: ignore[import-untyped]
 from pathlib import Path
+import hydra
+from omegaconf import DictConfig
 
 
 
-
-if __name__ == "__main__":
+@hydra.main(version_base=None, config_path='../conf')
+def main(cfg: DictConfig):
         # 1. Setup Paths
     dataset_name = "noaa_coastwatch_cellular"
     current_dir = Path.cwd() 
@@ -42,7 +44,7 @@ if __name__ == "__main__":
 
     }
 
-    T_total = signal_edge.shape[1]
+    # T_total = signal_edge.shape[1]
 
     # 4. Setup Complex & Parameters
     cellularComplex = {

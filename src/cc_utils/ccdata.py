@@ -43,6 +43,9 @@ class CellularComplexInMemoryData:
     def data(self):
         return self._current_data
 
+    def get_data(self):
+        return self._current_data
+
     
     def __estimate_T(self):
         T = None
@@ -66,6 +69,9 @@ class CellularComplexInMemoryData:
                     self._current_data[key] = np.hstack((self._current_data[key], incoming_data[key]))
                 else:
                     self._current_data[key] = incoming_data[key]
+
+    def export_data(self, target=None):
+        return self._current_data
 
 ## A data handler that mimics partial data sharning in CC settings. In this example, each cluster completely knows the partial data but these are exchanged when append_data is called. append_data only takes average of the partial_data inside the object and the incoming partial data. More complex strategies are left for future work.
 

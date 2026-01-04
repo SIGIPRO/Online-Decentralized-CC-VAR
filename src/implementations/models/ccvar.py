@@ -40,7 +40,7 @@ class CCVARModel(BaseModel):
             old_data = self._algorithm._data[key][:, 1:]
             
             # current_step_pred[k] is flat (N,), make it (N, 1)
-            new_col = inputData.reshape(-1, 1)
+            new_col = inputData[key].reshape(-1, 1)
             
             self._algorithm._data[key] = np.hstack([old_data, new_col])
 

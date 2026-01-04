@@ -42,7 +42,9 @@ class BaseAgent:
         if self._protocol.should_send_data(kwargs.get('t')):
             for cluster_id in self._neighbor_clusters:
                 # We send data relevant to the boundary with 'cluster_id'
-                self._protocol.send_data(self._data, target=cluster_id)
+                exporter = getattr(self._data, "export_data", None)
+                payload = exporter(target=cluster_id) if callable(exporter) else self._data
+                self._protocol.send_data(payload, target=cluster_id)
 
         incoming_data_map = self._receive_data()
         
@@ -104,4 +106,3 @@ class BaseAgent:
         return incoming_data_map
 
     
-

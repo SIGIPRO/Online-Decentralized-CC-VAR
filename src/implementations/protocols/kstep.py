@@ -5,15 +5,17 @@ class KStepProtocol(BaseProtocol):
     Implements a synchronous K-step communication protocol.
     Supports independent clocks for data measurements and model parameters.
     """
-    def __init__(self, K_data, K_param, heuristic=None):
+    def __init__(self, C_data, C_param, heuristic=None):
         """
         Args:
-            K_data (int): Frequency of measurement exchange (t % K_data == 0).
-            K_param (int): Frequency of parameter exchange (t % K_param == 0).
+            C_data (int): Frequency of measurement exchange (t % C_data == 0).
+            C_param (int): Frequency of parameter exchange (t % C_param == 0).
             heuristic (callable, optional): A function to override K-step logic 
                                             based on local state or error.
         """
-        super().__init__(K_data, K_param, heuristic)
+        super().__init__(heuristic=heuristic)
+        self._C_data = C_data
+        self._C_param = C_param
         
         # Local Inboxes (filled by the Environment/Router)
         self._inbox_data = {}   # {source_agent_id: measurement_data}
@@ -25,14 +27,14 @@ class KStepProtocol(BaseProtocol):
         """Checks if the current time instant is a data communication round."""
         if self._heuristic:
             # If a heuristic is provided, it can override the K-step logic
-            return self._heuristic(t, "data", self._K_data, local_state)
-        return t % self._K_data == 0
+            return self._heuristic(t, "data", self._C_data, local_state)
+        return t % self._C_data == 0
 
     def should_send_params(self, t, local_state=None):
         """Checks if the current time instant is a parameter mixing round."""
         if self._heuristic:
-            return self._heuristic(t, "params", self._K_param, local_state)
-        return t % self._K_param == 0
+            return self._heuristic(t, "params", self._C_param, local_state)
+        return t % self._C_param == 0
 
     # --- Outbound Logic (Agent calls these) ---
 
