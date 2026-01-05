@@ -150,16 +150,6 @@ def main(cfg: DictConfig):
             imputer = imputer,
             neighbors = clusters.agent_graph[cluster_head] #Check the usage of clusters
         )
-        # currAgent = BaseAgent(
-        #     model=CCVARModel,
-        #     modelParams=(ccvar_params,),
-        #     data=CCIMPartialData,
-        #     dataParams=dataParams,
-        #     protocol=KStepProtocol,
-        #     protocolParams=(1, 5),  # send data every step, parameters every 5 steps
-        #     mix=KGTMixingModel,
-        #     mixingParams=cfg.mixing,
-        # )
         agent_list.append(currAgent)
 
         if T is None:
@@ -174,46 +164,3 @@ def main(cfg: DictConfig):
             agent.update()
 
             ## TODO: Handle communication
-
-
-
-
-    # print(clusters.clustered_complexes)
-    
-
-
-# Local time-series per cluster: {name: np.ndarray of shape (features, time)}
-# local_data = {"cluster_0": np.random.randn(4, 20)}
-
-# # # Communication neighborhood (outgoing and incoming clusters)
-# # Nout = {"cluster_1": {}}
-# # Nin = {"cluster_1": {}}
-
-# # Forwarded directly to ccvar.CCVAR(*ccvar_params)
-# ccvar_params = (...)
-
-# mixing_params = (
-#     {"tracking": {"self": 0.0}, "correction": 0.0},  # initial_aux_vars
-#     {"self": 1.0, "cluster_1": 0.5},                 # weights
-#     {"K": 1.0, "c": 0.01, "s": 1.0},                 # eta hyperparameters
-# )
-
-# agent = BaseAgent(
-#     model=CCVARModel,
-#     modelParams=(ccvar_params,),
-#     Nin=Nin,
-#     Nout=Nout,
-#     data=CellularComplexInMemoryData,
-#     dataParams=(local_data,),
-#     protocol=KStepProtocol,
-#     protocolParams=(1, 5),  # send data every step, parameters every 5 steps
-#     mix=KGTMixingModel,
-#     mixingParams=mixing_params,
-# )
-
-# for t in range(10):
-#     if not agent.update(t=t):
-#         break
-
-# forecast = agent.estimate(steps=1)
-# print(forecast)

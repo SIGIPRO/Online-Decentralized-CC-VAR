@@ -9,7 +9,7 @@ class BaseImputer:
     def __init__(self, **kwargs):
         self._state = {}
 
-    def impute(self, current_data, incoming_data_map, t=None, metadata=None):
+    def impute(self, current_data, incoming_data_map, metadata=None):
         """
         Apply the imputation strategy.
 

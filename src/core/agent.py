@@ -105,7 +105,7 @@ class BaseAgent:
         return self._model.estimate(**kwargs)
     
     def _receive_data(self):
-          # Receive incoming measurements to fill N_out buffer
+          
         incoming_data_map = {}
         for cluster_id in self._neighbor_clusters:
             data = self._protocol.receive_data(cluster_id)
