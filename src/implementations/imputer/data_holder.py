@@ -16,21 +16,22 @@ class DataHolder(BaseImputer):
         if not isinstance(incoming_data_map, dict):
             return current_data
 
-        last_incoming = self._state.get("last_incoming", {})
+        # last_incoming = self._state or {}
         data_map = {}
-        neighbors = set(incoming_flags.keys()) | set(incoming_data_map.keys()) | set(last_incoming.keys())
+
+        neighbors = set(incoming_flags.keys()) & set(incoming_data_map.keys()) & set(self._state.keys())
         for cluster_id in neighbors:
-            if incoming_flags.get(cluster_id, cluster_id in incoming_data_map):
+            if incoming_flags.get(cluster_id, False):
                 payload = incoming_data_map.get(cluster_id)
                 if payload is not None:
-                    last_incoming[cluster_id] = payload
+                    self._state[cluster_id] = payload
                     data_map[cluster_id] = payload
             else:
-                payload = last_incoming.get(cluster_id)
+                payload = self._state.get(cluster_id)
                 if payload is not None:
                     data_map[cluster_id] = payload
 
-        self._state["last_incoming"] = last_incoming
+        # self._state["last_incoming"] = last_incoming
         if data_map:
             current_data.append_data(data_map)
         return current_data
