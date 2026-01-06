@@ -1,4 +1,5 @@
-__target__: src.cc_utils.clustering.CellularComplexFakeClustering
-d: 10
-dim: 0
-Q-hop: 5
+_target_: src.cc_utils.clustering.CellularComplexFakeClustering
+clusteringParameters:
+  d: 10
+  dim: 0
+  Q-hop: 5

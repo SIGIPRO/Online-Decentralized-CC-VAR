@@ -1,4 +1,3 @@
 dataset_name: noaa_coastwatch_cellular
 data_name: data_oriented_mov.mat
 adj_name: adjacencies_oriented.mat
-__target__: src.cc_utils.ccdata.CCIMPartialData

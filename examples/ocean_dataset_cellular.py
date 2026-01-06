@@ -94,17 +94,16 @@ def main(cfg: DictConfig):
                 
             else:
                 Nex[head_tuple[0]] = clusters.Nout[head_tuple]
-
-        dataParams = (processed_data, 
-                      interface,
-                      Nout,
-                      Nex,
-                      global_idx)
   
         protocol = instantiate(cfg.protocol)
         ccvarmodel = instantiate(cfg.model, cellularComplex = clusters.clustered_complexes[cluster_head]) ## Check the usage of clusters 
         # ccdata = CCIMPartialData(*dataParams)
-        ccdata = instantiate(cfg.dataset, *dataParams)
+        ccdata = instantiate(cfg.ccdata,
+                              data = processed_data,
+                              interface = interface,
+                              Nout = Nout,
+                              Nex = Nex,
+                              global_idx = global_idx)
         mixingParams = dict() ## Placeholder for mixing parameters
         mixing = instantiate(cfg.mixing, mixingParams)
         imputer = instantiate(cfg.imputer)
@@ -130,9 +129,8 @@ def main(cfg: DictConfig):
 
     for t in range(0,T):
         for cluster_head in agent_list:
-            agent = agent_list[cluster_head]
-            agent.send_data(t)
-            data_box = agent.outbox['data']
+            agent_list[cluster_head].send_data(t)
+            data_box = agent_list[cluster_head].outbox['data']
             for cluster_id in data_box:
                agent_list[cluster_id].push_to_inbox(cluster_head, data_box[cluster_id], "data")
 
@@ -143,7 +141,7 @@ def main(cfg: DictConfig):
         for cluster_head in agent_list:
             agent_list[cluster_head].prepare_params(t)
             agent_list[cluster_head].send_params(t)
-            params_box = agent.outbox['params']
+            params_box = agent_list[cluster_head].outbox['params']
             for cluster_id in params_box:
                 agent_list[cluster_id].push_to_inbox(cluster_head, params_box[cluster_id], "params")
 
