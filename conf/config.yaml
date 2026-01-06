@@ -1,7 +1,7 @@
 defaults:
-  - dataset: ocean
+  - dataset: ocean_cellular_dataset
   - experiment: base
-  - imputer: zero_padder
+  - imputer: zeropadder
   - model: ccvar
   - mixing: kgt
   - protocol: kstep

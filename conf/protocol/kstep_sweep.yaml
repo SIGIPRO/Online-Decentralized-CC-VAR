@@ -2,5 +2,5 @@ hydra:
   mode: MULTIRUN
   sweeper:
     params:
-      protocol.K_data: 1,2,4
-      protocol.K_param: 5,10,20
+      protocol.C_data: 1,2,4
+      protocol.C_param: 5,10,20

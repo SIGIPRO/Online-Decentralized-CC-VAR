@@ -13,8 +13,7 @@ from omegaconf import DictConfig
 
 
 def load_data(datasetParams):
-        # 1. Setup Paths
-    # dataset_name = "noaa_coastwatch_cellular"
+
     dataset_name = datasetParams.dataset_name
     data_name = datasetParams.data_name
     adjacencies_name = datasetParams.adj_name
@@ -24,9 +23,7 @@ def load_data(datasetParams):
 
     # 2. Load Data
     try:
-        # m = sio.loadmat(root_name / dataset_name / "data_oriented_mov.mat")
         m = sio.loadmat(root_name / dataset_name / data_name)
-        # topology = sio.loadmat(root_name / dataset_name / "adjacencies_oriented.mat")
         topology = sio.loadmat(root_name / dataset_name / adjacencies_name)
     except FileNotFoundError:
         print("Error: Data files not found. Check paths.")
@@ -48,8 +45,6 @@ def load_data(datasetParams):
 
     }
 
-    # T_total = signal_edge.shape[1]
-
     # 4. Setup Complex & Parameters
     cellularComplex = {
         1: topology['B1'].astype(float),
@@ -70,13 +65,6 @@ def main(cfg: DictConfig):
     outputDir = get_output_dir(cfg.dataset.dataset_name)
     cc_data, cellularComplex = load_data(cfg.dataset)
 
-    # clusteringParameters = {
-    #     'd' : 10,
-    #     'dim' : 0,
-    #     'Q-hop' : 5
-    # }
-
-    # clusters = CellularComplexFakeClustering(cellularComplex=cellularComplex, clusteringParameters=cfg.clustering)
     clusters = instantiate(config=cfg.clustering, cellularComplex=cellularComplex)
     
     # mixing_params = (
@@ -84,22 +72,10 @@ def main(cfg: DictConfig):
     #     {"self": 1.0, "cluster_1": 0.5},                 # weights
     #     {"K": 1.0, "c": 0.01, "s": 1.0},                 # eta hyperparameters
     # )
-
-    # algorithmParam = {
-    #     'Tstep': 6,
-    #     'P': 2,
-    #     'K': [2, (2, 2), 2],     
-    #     'mu': [0, (0, 0), 0],    
-    #     'lambda': 0.01,
-    #     'gamma': 0.98,
-    #     'enabler': [True, True, True], 
-    #     'FeatureNormalzn': True,
-    #     'BiasEn': True
-    # }
     # ccvar_params = (algorithmParam, cellularComplex)
     # ccvar_params = (cfg.model.algorithmParam, cellularComplex)
     T = None
-    agent_list = []
+    agent_list = dict()
     for cluster_head in clusters.clustered_complexes:
         processed_data = dict()
         global_idx = clusters.global_to_local_idx[cluster_head]
@@ -130,16 +106,16 @@ def main(cfg: DictConfig):
                       Nout,
                       Nex,
                       global_idx)
-        # K_data = getattr(cfg.protocol, "K_data", 1)
-        # K_param = getattr(cfg.protocol, "K_param", 1)
+  
         protocol = instantiate(cfg.protocol)
         ccvarmodel = instantiate(cfg.model, cellularComplex = clusters.clustered_complexes[cluster_head]) ## Check the usage of clusters 
         ccdata = CCIMPartialData(*dataParams)
-        mixing = instantiate(cfg.mixing)
+        mixingParams = dict() ## Placeholder for mixing parameters
+        mixing = instantiate(cfg.mixing, mixingParams)
         imputer = instantiate(cfg.imputer)
         ## TODO 1: Check if mixing is complying with the data, model, protocol. (Codex controlled it)
         ## TODO 2:  Check if imputer is complying with the data, model, protocol and mixing. (Data Holder and Zero Hold is done.)
-        ## TODO 3: Check if agent is complying with the data, model, protocol, mixing and imputer.
+        ## TODO 3: Check if agent is complying with the data, model, protocol, mixing and imputer. (This is done but not yet checked.)
         ## TODO 4: Implement metric, results plotter and cellular complex plotter.
         currAgent = BaseAgent(
             cluster_id = cluster_head,
@@ -150,7 +126,7 @@ def main(cfg: DictConfig):
             imputer = imputer,
             neighbors = clusters.agent_graph[cluster_head] #Check the usage of clusters
         )
-        agent_list.append(currAgent)
+        agent_list[cluster_head] = currAgent
 
         if T is None:
             T = currAgent._data._T_total
@@ -160,7 +136,32 @@ def main(cfg: DictConfig):
 
 
     for t in range(0,T):
-        for agent in agent_list:
-            agent.update()
+        for cluster_head in agent_list:
+            agent = agent_list[cluster_head]
+            agent.send_data(t)
+            data_box = agent.outbox['data']
+            for cluster_id in data_box:
+               agent_list[cluster_id].push_to_inbox(cluster_head, data_box[cluster_id], "data")
 
-            ## TODO: Handle communication
+        for cluster_head in agent_list:
+            agent_list[cluster_head].receive_data()
+            agent_list[cluster_head].local_step()
+
+        for cluster_head in agent_list:
+            agent_list[cluster_head].prepare_params(t)
+            agent_list[cluster_head].send_params(t)
+            params_box = agent.outbox['params']
+            for cluster_id in params_box:
+                agent_list[cluster_id].push_to_inbox(cluster_head, params_box[cluster_id], "params")
+
+        for cluster_head in agent_list:
+            agent_list[cluster_head].receive_params()
+            agent_list[cluster_head].do_consensus()
+
+        
+
+
+
+
+            agent_list[cluster_head].iterate_data(t)
+

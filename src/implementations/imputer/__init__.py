@@ -1,2 +1,2 @@
-from .data_holder import DataHolderAgent
-from .zero_padder import ZeroPadderAgent
+from .data_holder import DataHolder
+from .zero_padder import ZeroPadder

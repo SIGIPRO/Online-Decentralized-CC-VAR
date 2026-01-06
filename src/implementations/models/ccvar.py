@@ -20,7 +20,6 @@ class CCVARModel(BaseModel):
         grad = []
 
         inputData = aggregated_data.get_data()
-        ## NOTE: give external_data even in noncommunication rounds as 0, or any of the heuristics.
 
         for key in self._algorithm._data_keys:
             if key not in inputData: continue

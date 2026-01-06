@@ -13,8 +13,7 @@ class BaseModel:
         Computes the gradient of the local loss function f_i.
         
         Args:
-            local_data: The data points owned by the agent.
-            external_data: Data received from neighbors (can be None or stale).
+            aggregated_data: The data points owned by the agent.
         Returns:
             A gradient vector/matrix of the same shape as self._params.
         """
@@ -32,6 +31,9 @@ class BaseModel:
 
     def set_params(self, new_params):
         self._params = new_params
+
+    def update_params(self, update_term):
+        self._params += update_term
 
     def update_internal_state(self, new_data):
         """
@@ -76,7 +78,7 @@ class BaseMixingModel:
         # Generic: return local_gradient + self._aux
         raise NotImplementedError("Define how the gradient is corrected via trackers.")
 
-    def update_auxiliary(self, **kwargs):
+    def update_aux(self, **kwargs):
         """
         Updates trackers, dual variables, or mixing history.
         """
