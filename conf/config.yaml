@@ -6,7 +6,6 @@ defaults:
   - mixing: kgt
   - protocol: kstep
   - clustering: default
-  - paths: local
   - _self_
 
 hydra:

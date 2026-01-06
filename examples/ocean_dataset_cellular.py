@@ -1,10 +1,6 @@
 import numpy as np
 from src.core import BaseAgent
-from src.cc_utils import CCIMPartialData 
-# CellularComplexFakeClustering
-# from src.implementations.protocols import KStepProtocol
-# from src.implementations.mixing import KGTMixingModel
-# from src.implementations.models import CCVARModel
+# from src.cc_utils import CCIMPartialData 
 import scipy.io as sio # type: ignore[import-untyped]
 from pathlib import Path
 import hydra
@@ -72,8 +68,6 @@ def main(cfg: DictConfig):
     #     {"self": 1.0, "cluster_1": 0.5},                 # weights
     #     {"K": 1.0, "c": 0.01, "s": 1.0},                 # eta hyperparameters
     # )
-    # ccvar_params = (algorithmParam, cellularComplex)
-    # ccvar_params = (cfg.model.algorithmParam, cellularComplex)
     T = None
     agent_list = dict()
     for cluster_head in clusters.clustered_complexes:
@@ -109,12 +103,11 @@ def main(cfg: DictConfig):
   
         protocol = instantiate(cfg.protocol)
         ccvarmodel = instantiate(cfg.model, cellularComplex = clusters.clustered_complexes[cluster_head]) ## Check the usage of clusters 
-        ccdata = CCIMPartialData(*dataParams)
+        # ccdata = CCIMPartialData(*dataParams)
+        ccdata = instantiate(cfg.dataset, *dataParams)
         mixingParams = dict() ## Placeholder for mixing parameters
         mixing = instantiate(cfg.mixing, mixingParams)
         imputer = instantiate(cfg.imputer)
-        ## TODO 1: Check if mixing is complying with the data, model, protocol. (Codex controlled it)
-        ## TODO 2:  Check if imputer is complying with the data, model, protocol and mixing. (Data Holder and Zero Hold is done.)
         ## TODO 3: Check if agent is complying with the data, model, protocol, mixing and imputer. (This is done but not yet checked.)
         ## TODO 4: Implement metric, results plotter and cellular complex plotter.
         currAgent = BaseAgent(
@@ -159,9 +152,5 @@ def main(cfg: DictConfig):
             agent_list[cluster_head].do_consensus()
 
         
-
-
-
-
             agent_list[cluster_head].iterate_data(t)
 
