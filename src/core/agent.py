@@ -13,12 +13,9 @@ REWARD: Reward is the error achieved by the Model
 
 """
 class BaseAgent:
-    # _total_agents = 0
-    
-    # def __init__(self, model, modelParams, data, dataParams, protocol, protocolParams, mix, mixingParams):
+
     def __init__(self, cluster_id, model, data, protocol, mix, imputer, neighbors):
-        # self._agent_id = BaseAgent._total_agents
-        # BaseAgent._total_agents += 1
+
         self._cluster_id = cluster_id
 
         self._data = data
@@ -27,19 +24,16 @@ class BaseAgent:
         self._mixing_model = mix
         self._imputer = imputer
         self._neighbor_clusters = neighbors
-
-        # self._data = data(*dataParams) # Local Data Handler
-
-        # Logic separation:
-        # self._protocol = protocol(*protocolParams)      # When/How to talk
-        # self._neighbor_clusters = self._protocol.neighbors  # Get neighbor clusters from protocol
-        # self._mixing_model = mix(*mixingParams)          # How to merge weights (DGT/ADMM)
-        # self._model = model(*modelParams)                # Local Task Model
+        self._t = 0
 
     def update(self, **kwargs):
         """
         One discrete time step in the life of the agent.
         """
+        t = kwargs.get("t")
+        if t is None:
+            t = self._t
+            kwargs = {**kwargs, "t": t}
         try: 
             next(self._data)  # Advance data iterator if applicable
         except StopIteration:
@@ -48,7 +42,7 @@ class BaseAgent:
         # 1. DATA PHASE (K_data)
         # ----------------------
         # Send local measurements to neighbors who need them
-        if self._protocol.should_send_data(kwargs.get('t')):
+        if self._protocol.should_send_data(t):
             for cluster_id in self._neighbor_clusters:
                 # We send data relevant to the boundary with 'cluster_id'
                 exporter = getattr(self._data, "export_data", None)
@@ -57,9 +51,11 @@ class BaseAgent:
 
         incoming_data_map = self._receive_data()
         
-        if incoming_data_map:
-            # self._data = self._append_data(self._data, incoming_data_map)
-            self._data.append_data(incoming_data_map)
+        # if incoming_data_map:
+        #     # self._data = self._append_data(self._data, incoming_data_map)
+        #     self._data.append_data(incoming_data_map)
+
+        self._data = self._imputer.impute(self._data, incoming_data_map)
 
         # 2. GRADIENT PHASE
         # -----------------
@@ -69,7 +65,7 @@ class BaseAgent:
 
         # 3. PARAMETER PHASE (K_param)
         # ---------------------------
-        if self._protocol.should_send_params(kwargs.get('t')):
+        if self._protocol.should_send_params(t):
             for cluster_id in self._neighbor_clusters:
                 self._protocol.send_params(self._model.get_params(), target=cluster_id)
 
@@ -83,20 +79,22 @@ class BaseAgent:
         # 4. MIXING & UPDATING
         # --------------------
         # The mixing model applies Gradient Tracking / Consensus logic
-    
+          # 5. Correction & Set New Params
+
+        new_theta = self._model.get_params() - self._mixing_model.apply_correction(local_gradient=local_grad)
+        self._model.set_params(new_theta)
 
         if neighbor_params != {}:
             self._mixing_model.update_auxiliary(local_params=self._model.get_params(),
                                             neighbor_params_dict=neighbor_params)
-            self._mixing_model.mix_parameters(local_params=self._model.get_params(),
+            new_theta = self._mixing_model.mix_parameters(local_params=self._model.get_params(),
                                             neighbor_params_dict=neighbor_params)
+            self._model.set_params(new_theta)
     
    
-
-        # 5. Correction & Set New Params
-
-        new_theta = self._mixing_model.apply_correction(local_gradient=local_grad)
-        self._model.set_params(new_theta)
+        
+      
+        self._t = t + 1
 
         return True
 
@@ -107,6 +105,7 @@ class BaseAgent:
     def _receive_data(self):
           
         incoming_data_map = {}
+        
         for cluster_id in self._neighbor_clusters:
             data = self._protocol.receive_data(cluster_id)
             if data is not None:

@@ -138,7 +138,7 @@ def main(cfg: DictConfig):
         mixing = instantiate(cfg.mixing)
         imputer = instantiate(cfg.imputer)
         ## TODO 1: Check if mixing is complying with the data, model, protocol. (Codex controlled it)
-        ## TODO 2:  Check if imputer is complying with the data, model, protocol and mixing.
+        ## TODO 2:  Check if imputer is complying with the data, model, protocol and mixing. (Data Holder and Zero Hold is done.)
         ## TODO 3: Check if agent is complying with the data, model, protocol, mixing and imputer.
         ## TODO 4: Implement metric, results plotter and cellular complex plotter.
         currAgent = BaseAgent(

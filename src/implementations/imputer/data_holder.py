@@ -7,31 +7,44 @@ class DataHolder(BaseImputer):
         super().__init__(**kwargs)
     
     def impute(self, current_data, incoming_data_map, metadata=None):
-        incoming_flags = {}
-        if isinstance(metadata, dict):
-            incoming_flags = metadata.get("incoming", {}) or {}
+        
+        if not isinstance(incoming_data_map, dict):
+            return current_data
+        # incoming_flags = {}
+        # for key in incoming_data_map:
+        #     incoming_flags[key] = 
+        # if isinstance(metadata, dict):
+        #     incoming_flags = metadata.get("incoming", {}) or {}
 
         # if incoming_data_map is None:
         #     incoming_data_map = {}
-        if not isinstance(incoming_data_map, dict):
-            return current_data
+
 
         # last_incoming = self._state or {}
         data_map = {}
 
-        neighbors = set(incoming_flags.keys()) & set(incoming_data_map.keys()) & set(self._state.keys())
+        # neighbors = set(incoming_flags.keys()) & set(incoming_data_map.keys()) & set(self._state.keys())
+        neighbors = set(self._state.keys()) | set(incoming_data_map.keys())
         for cluster_id in neighbors:
-            if incoming_flags.get(cluster_id, False):
-                payload = incoming_data_map.get(cluster_id)
-                if payload is not None:
-                    self._state[cluster_id] = payload
-                    data_map[cluster_id] = payload
+            payload = incoming_data_map.get(cluster_id, None)
+            if payload is not None:
+                self._state[cluster_id] = payload
+                data_map[cluster_id] = payload
             else:
-                payload = self._state.get(cluster_id)
+                payload = self._state.get(cluster_id, None)
                 if payload is not None:
                     data_map[cluster_id] = payload
+            # if incoming_flags.get(cluster_id, False):
+            #     payload = incoming_data_map.get(cluster_id)
+            #     if payload is not None:
+            #         self._state[cluster_id] = payload
+            #         data_map[cluster_id] = payload
+            # else:
+            #     payload = self._state.get(cluster_id)
+            #     if payload is not None:
+            #         data_map[cluster_id] = payload
 
         # self._state["last_incoming"] = last_incoming
         if data_map:
-            current_data.append_data(data_map)
+            current_data.append_data(data_map, accept_stale = True)
         return current_data

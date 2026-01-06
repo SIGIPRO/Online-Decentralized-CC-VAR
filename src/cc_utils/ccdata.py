@@ -60,7 +60,7 @@ class CellularComplexInMemoryData:
         self._T_total = T
         self._curr_iteration = 0
 
-    def append_data(self, incoming_data_map):
+    def append_data(self, incoming_data_map, **kwargs):
         ## !!!! CHECK THIS FUNCTION FOR CORRECTNESS !!!! There should be no index mismatch
         for cluster_id in incoming_data_map:
             incoming_data = incoming_data_map[cluster_id]
@@ -139,15 +139,16 @@ class CCIMPartialData(CellularComplexInMemoryData):
 
     
     
-    def append_data(self, incoming_data_map):
+    def append_data(self, incoming_data_map, accept_stale = False):
         for cluster_id in incoming_data_map:
             incoming_data = incoming_data_map.get(cluster_id, None)
 
             if incoming_data is None:
                 continue
 
-            if incoming_data.get('t') != self._curr_iteration:
-                continue
+            if not accept_stale:
+                if incoming_data.get('t') != self._curr_iteration:
+                    continue
 
             for key in self._current_data:
                 i = 0
