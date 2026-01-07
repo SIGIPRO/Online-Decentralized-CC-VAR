@@ -1,3 +1,4 @@
 dataset_name: noaa_coastwatch_cellular
 data_name: data_oriented_mov.mat
 adj_name: adjacencies_oriented.mat
+# data_url: https://zenodo.org/records/18167007?preview=1&token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6ImY0NjU0ZmM3LTRlZTYtNDY1Ny1hODVmLTg2Mjc2ZWM2OWJkMCIsImRhdGEiOnt9LCJyYW5kb20iOiIwMmY4OTNmMDFkNjhlMzc0NzQ4OTU2Zjg5MzExZTRiNiJ9.wbgzx-UttV8e8G9jpHpiAZ5lpq9QqRaa73tmOIodHzKBJeHgoywQ70L3htpwUNXjQr8qRpjCyzTHFGz1Gy0OYQ

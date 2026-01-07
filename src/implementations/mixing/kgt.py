@@ -7,6 +7,7 @@ class KGTMixingModel(BaseMixingModel):
         super().__init__(initial_aux_vars, weights, eta)
         self._eta['Kc'] = self._eta['K'] * self._eta['c']
         self._eta['Kcs'] = self._eta['K'] * self._eta['c'] * self._eta['s']
+        self._aux = 0
 
         if isinstance(initial_aux_vars, dict):
             self._correction = initial_aux_vars.get('correction', 0)
@@ -35,7 +36,7 @@ class KGTMixingModel(BaseMixingModel):
 
         
     def apply_correction(self, local_gradient):
-        return self._eta['c'] * (local_gradient + self._aux['c'])
+        return self._eta['c'] * (local_gradient + self._correction)
 
     def update_aux(self, **kwargs):
         local_params = kwargs.get('local_params', 0)

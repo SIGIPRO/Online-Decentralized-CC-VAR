@@ -1,4 +1,7 @@
 from scipy.io import loadmat
+from io import BytesIO
+import shutil
+from urllib.request import urlopen
 import numpy as np
 
 class CellularComplexInMemoryData:
@@ -15,6 +18,28 @@ class CellularComplexInMemoryData:
         instance = cls()
         instance._data = matlab_data
 
+        instance.__estimate_T()
+        return instance
+
+    @classmethod
+    def from_url(cls, url, save_path=None, **loadmat_kwargs):
+        """
+        Load a MATLAB .mat file from a URL.
+
+        If save_path is provided, the file is saved to disk and loaded from there.
+        Otherwise, it is loaded directly into memory without saving.
+        """
+        if save_path:
+            with urlopen(url) as response, open(save_path, "wb") as f:
+                shutil.copyfileobj(response, f)
+            matlab_data = loadmat(save_path, **loadmat_kwargs)
+        else:
+            with urlopen(url) as response:
+                data_bytes = response.read()
+            matlab_data = loadmat(BytesIO(data_bytes), **loadmat_kwargs)
+
+        instance = cls()
+        instance._data = matlab_data
         instance.__estimate_T()
         return instance
     

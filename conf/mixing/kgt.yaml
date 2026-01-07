@@ -1,1 +1,7 @@
 _target_: src.implementations.mixing.kgt.KGTMixingModel
+eta: 
+  K: 5
+  c: 0.01
+  s: 1
+initial_aux_vars:
+  correction: 0

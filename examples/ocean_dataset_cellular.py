@@ -1,6 +1,5 @@
 import numpy as np
 from src.core import BaseAgent
-# from src.cc_utils import CCIMPartialData 
 import scipy.io as sio # type: ignore[import-untyped]
 from pathlib import Path
 import hydra
@@ -97,18 +96,22 @@ def main(cfg: DictConfig):
   
         protocol = instantiate(cfg.protocol)
         ccvarmodel = instantiate(cfg.model, cellularComplex = clusters.clustered_complexes[cluster_head]) ## Check the usage of clusters 
-        # ccdata = CCIMPartialData(*dataParams)
         ccdata = instantiate(cfg.ccdata,
                               data = processed_data,
                               interface = interface,
                               Nout = Nout,
                               Nex = Nex,
                               global_idx = global_idx)
-        mixingParams = dict() ## Placeholder for mixing parameters
-        mixing = instantiate(cfg.mixing, mixingParams)
+        weights = dict()
+        num_connected = len(clusters.agent_graph[cluster_head]) + 1
+        weights['self'] = 1/num_connected
+        for cluster_id in list(clusters.agent_graph[cluster_head]):
+            weights[cluster_id] = 1/num_connected
+
+        mixing = instantiate(cfg.mixing, weights = weights)
         imputer = instantiate(cfg.imputer)
-        ## TODO 3: Check if agent is complying with the data, model, protocol, mixing and imputer. (This is done but not yet checked.)
         ## TODO 4: Implement metric, results plotter and cellular complex plotter.
+        ## TODO 5: Check the code from beginning to end.
         currAgent = BaseAgent(
             cluster_id = cluster_head,
             model = ccvarmodel,

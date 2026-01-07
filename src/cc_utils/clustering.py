@@ -98,6 +98,8 @@ class CellularComplexFakeClustering:
 
                 if h1 not in self.agent_graph.keys():
                     self.agent_graph[h1] = set()
+                if h2 not in self.agent_graph.keys():
+                    self.agent_graph[h2] = set()
 
 
                 if key not in self.Nout:
@@ -117,6 +119,7 @@ class CellularComplexFakeClustering:
                     if inter:
                         self.interface[key][dim] = inter
                         self.agent_graph[h1].add(h2)
+                        self.agent_graph[h2].add(h1)
 
                      
 
