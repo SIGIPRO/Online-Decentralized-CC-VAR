@@ -1,5 +1,5 @@
-_target_: src.cc_utils.clustering.CellularComplexFakeClustering
+_target_: src.cc_utils.clustering.ModularityBasedClustering
 clusteringParameters:
-  d: 10
-  dim: 0
+  d: 20
+  dim: 1
   Q-hop: 5

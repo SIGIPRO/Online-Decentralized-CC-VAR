@@ -5,6 +5,7 @@ from pathlib import Path
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig
+from cellexp_util.metric.metric_utils import MetricManager
 
 
 def load_data(datasetParams):
@@ -55,23 +56,24 @@ def get_output_dir(dataset_name):
     return output_dir
 
 
-@hydra.main(version_base=None, config_path='../conf')
+@hydra.main(version_base=None, config_path='../conf', config_name='config.yaml')
 def main(cfg: DictConfig):
+    print(cfg)
     outputDir = get_output_dir(cfg.dataset.dataset_name)
     cc_data, cellularComplex = load_data(cfg.dataset)
 
     clusters = instantiate(config=cfg.clustering, cellularComplex=cellularComplex)
-    
-    # mixing_params = (
-    #     {"tracking": {"self": 0.0}, "correction": 0.0},  # initial_aux_vars
-    #     {"self": 1.0, "cluster_1": 0.5},                 # weights
-    #     {"K": 1.0, "c": 0.01, "s": 1.0},                 # eta hyperparameters
-    # )
+
+    import pdb; pdb.set_trace()
+
     T = None
     agent_list = dict()
+    # print(clusters)
     for cluster_head in clusters.clustered_complexes:
+        print(cluster_head)
         processed_data = dict()
         global_idx = clusters.global_to_local_idx[cluster_head]
+        print(global_idx)
         for dim in cc_data:
             processed_data[dim] = cc_data[dim][global_idx[dim],:]
         
@@ -95,6 +97,7 @@ def main(cfg: DictConfig):
                 Nex[head_tuple[0]] = clusters.Nout[head_tuple]
   
         protocol = instantiate(cfg.protocol)
+        # print(cfg.model.algorithmParam.K[1])
         ccvarmodel = instantiate(cfg.model, cellularComplex = clusters.clustered_complexes[cluster_head]) ## Check the usage of clusters 
         ccdata = instantiate(cfg.ccdata,
                               data = processed_data,
@@ -112,6 +115,7 @@ def main(cfg: DictConfig):
         imputer = instantiate(cfg.imputer)
         ## TODO 4: Implement metric, results plotter and cellular complex plotter.
         ## TODO 5: Check the code from beginning to end.
+
         currAgent = BaseAgent(
             cluster_id = cluster_head,
             model = ccvarmodel,
@@ -128,9 +132,11 @@ def main(cfg: DictConfig):
         else:
             if currAgent._data._T_total < T:
                 T = currAgent._data._T_total
+        print(agent_list)
 
-
+    print(T)
     for t in range(0,T):
+        print(t)
         for cluster_head in agent_list:
             agent_list[cluster_head].send_data(t)
             data_box = agent_list[cluster_head].outbox['data']
@@ -155,3 +161,5 @@ def main(cfg: DictConfig):
         
             agent_list[cluster_head].iterate_data(t)
 
+if __name__ == "__main__":
+    main()

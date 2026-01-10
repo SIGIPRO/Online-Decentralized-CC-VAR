@@ -6,8 +6,130 @@ from itertools import combinations
 import numpy as np
 from numpy.linalg import matrix_power
 import networkx as nx
+from copy import copy
+import matplotlib.pyplot as plt
+from scipy.io import loadmat
+
+@dataclass
+class ModularityBasedClustering:
+    """Cellular complex clustering with d-hop ad hoc algorithms. The class simulates the ad-hoc algorithm. However, this is not an exactly distributed algorithm. The class will save and return clustering results given Hodge-Laplacian and boundary matrices.
+    """
+
+    cellularComplex : Dict[int, np.ndarray]
+    clusteringParameters: Dict[str, int]
+    
+    Nin : Dict[int, Any] = field(default_factory=dict)
+    Nout : Dict[Tuple[int,int], Any] = field(default_factory=dict)
+    interface: Dict[Tuple[int,int], Any] = field(default_factory = dict)
+    clustered_complexes : Dict[int, Dict[int, np.ndarray]] = field(default_factory=dict)
+    global_to_local_idx : Dict[int, Dict[int, List[int]]] = field(default_factory=dict)
+    agent_graph : Dict[int, Set] = field(default_factory=dict)
+    upper_lower_adjacency: Optional[list[Dict[int, list[int]]]] = None
+    
+    def __post_init__(self):
+        dimensions = list(self.cellularComplex.keys())
+        max_dim = max(dimensions)
+        
+        if self.clusteringParameters['dim'] < 0 or self.clusteringParameters['dim'] > max_dim or self.clusteringParameters['dim'] is None: raise ValueError("Invalid dimension for clustering.")
+
+        
+        requested_dim = int(self.clusteringParameters.get('dim', 0))
+        B_down = self.cellularComplex.get(requested_dim, None)
+        B_up = self.cellularComplex.get(requested_dim + 1, None)
+
+        L_lower = 0
+        L_upper = 0
+
+        if B_down is not None:
+            L_lower = B_down.T @ B_down
+        if B_up is not None:
+            L_upper = B_up @ B_up.T
+        
+        # laplacian = L_lower + L_upper
+        laplacian = L_lower
+
+        # Construct loopless graph from L
+        adjacency = copy(laplacian)
+        np.fill_diagonal(adjacency, 0)  # Ensure diagonal is computed
+        adjacency = (adjacency != 0).astype(int)
+        G = nx.from_numpy_array(adjacency)
+        
+        communities = nx.community.greedy_modularity_communities(G = G, best_n = 7, resolution=1.5)
+        print(len(communities))
+        path = '../../data/Input/noaa_coastwatch_cellular/longlat.mat'
+        positions = loadmat(path)
+        coords = positions.get("longlat")
+        if coords is None or coords.shape[0] != G.number_of_nodes():
+            pos = nx.spring_layout(G, seed=0)
+        else:
+            pos = {i: (float(coords[i, 0]), float(coords[i, 1])) for i in range(coords.shape[0])}
 
 
+        
+        B_up = self.cellularComplex.get(1, None)
+        if B_up is not None:
+            laplacian_node = B_up @ B_up.T
+
+        adjacency_node = copy(laplacian_node)
+        np.fill_diagonal(adjacency_node, 0)  # Ensure diagonal is computed
+        adjacency_node = (adjacency_node != 0).astype(int)
+        G_node = nx.from_numpy_array(adjacency_node)
+
+        positions = {i: (float(coords[i, 0]), float(coords[i, 1])) for i in range(coords.shape[0])}
+
+            
+        plt.figure()
+        nx.draw_networkx_nodes(G_node, positions, nodelist = list(G_node.nodes()))
+        nx.draw_networkx_edges(G_node, positions, edgelist = list(G_node.edges()))
+        # import pdb; pdb.set_trace()
+
+        plt.figure()
+        cmap = plt.get_cmap("tab20" if len(communities) > 10 else "tab10")
+        colors = [cmap(i) for i in np.linspace(0, 1, max(len(communities), 1))]
+        # node_to_cluster = {
+        #     node: cluster_idx
+        #     for cluster_idx, subnodes in enumerate(communities)
+        #     for node in subnodes
+        # }
+        # node_colors = [colors[node_to_cluster[node]] for node in G.nodes()] 
+        
+        ax = plt.gca()
+        for idx, subedges in enumerate(communities):
+            
+
+            
+            B_down_new = B_down[:, list(subedges)]
+            laplacian_new = B_down_new @ B_down_new.T
+            lap_diag = laplacian_new.diagonal()
+            
+            indices = list(np.nonzero(lap_diag)[0])
+            indices = [int(i) for i in indices]
+            # import pdb; pdb.set_trace()
+
+            B_down_new = B_down_new[indices, :]
+            laplacian_new = B_down_new @ B_down_new.T
+            adjacency_new = copy(laplacian_new)
+            np.fill_diagonal(adjacency_new, 0)  # Ensure diagonal is computed
+            adjacency_new = (adjacency_new != 0).astype(int)
+            G_new = nx.from_numpy_array(adjacency_new) 
+
+            
+            pos = dict()
+        
+            for i in range(len(indices)):
+                pos[i] = positions[indices[i]]
+
+            # import pdb; pdb.set_trace()
+            
+            # G_sub = G.subgraph(subnodes)
+            color = colors[idx]
+            nx.draw_networkx_nodes(G, pos, nodelist=list(G_new.nodes()), node_color=[color], ax=ax)
+            nx.draw_networkx_edges(G, pos, edgelist=list(G_new.edges()), edge_color=[color], ax=ax)
+        # nx.draw_networkx_edges(G, pos, edgelist=list(G.edges()), edge_color="lightgray", alpha=0.5, ax=ax)
+        # nx.draw_networkx_nodes(G, pos, nodelist=list(G.nodes()), node_color=node_colors, ax=ax)
+        ax.set_axis_off()
+        plt.show()
+        import pdb; pdb.set_trace()
 ## Continue from here.
 
 @dataclass
@@ -25,6 +147,7 @@ class CellularComplexFakeClustering:
     global_to_local_idx : Dict[int, Dict[int, List[int]]] = field(default_factory=dict)
     agent_graph : Dict[int, Set] = field(default_factory=dict)
     upper_lower_adjacency: Optional[list[Dict[int, list[int]]]] = None
+    
 
     def __post_init__(self):
         """Initialize the clustering model."""
@@ -153,7 +276,7 @@ class CellularComplexFakeClustering:
                     if dim in self.Nin.get(h2, {}):
                         self.Nin[h2][dim] -= inter
             
-        for dim in self.cellularComplex:
+        for dim in set(self.cellularComplex.keys()) | {0}:
             for h1 in heads:
                 dim_adjacencies = set()
                 lower_adjacencies = set()
@@ -174,9 +297,11 @@ class CellularComplexFakeClustering:
                 if dim not in self.global_to_local_idx[h1]:
                     self.global_to_local_idx[h1][dim] = list()
 
-                global_idx = list(lower_adjacencies)
+                # global_idx = list(lower_adjacencies)
+                global_idx = list(dim_adjacencies)
                 # local_idx = [i for i in range(len(global_idx))]
-                self.clustered_complexes[h1][dim] = self.cellularComplex[dim][np.ix_(global_idx, list(dim_adjacencies))]
+                if dim in self.cellularComplex:
+                    self.clustered_complexes[h1][dim] = self.cellularComplex[dim][np.ix_(list(lower_adjacencies), list(dim_adjacencies))]
             
 
                 self.global_to_local_idx[h1][dim] = global_idx

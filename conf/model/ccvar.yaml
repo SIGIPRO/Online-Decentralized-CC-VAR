@@ -1,4 +1,5 @@
 _target_: src.implementations.models.ccvar.CCVARModel
+_convert_: partial
 algorithmParam:
   Tstep: 6
   P: 2

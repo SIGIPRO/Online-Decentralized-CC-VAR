@@ -1,1 +1,2 @@
 _target_: src.cc_utils.ccdata.CCIMPartialData
+_convert_: partial
