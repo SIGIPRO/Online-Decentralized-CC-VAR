@@ -1,0 +1,5 @@
+_target_: src.cc_utils.clustering.CellularComplexFakeClustering
+clusteringParameters:
+  d: 20
+  dim: 1
+  Q-hop: 5

@@ -6,7 +6,7 @@ defaults:
   - model: ccvar
   - mixing: kgt
   - protocol: kstep
-  - clustering: default
+  - clustering: modularity
   - _self_
 
 hydra:

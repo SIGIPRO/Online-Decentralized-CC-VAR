@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Iterable, Optional, Tuple, Any, Set, TypeVar, List
 from collections.abc import Hashable
 from itertools import combinations
+import itertools
 import numpy as np
 from numpy.linalg import matrix_power
 import networkx as nx
@@ -25,57 +26,43 @@ class ModularityBasedClustering:
     global_to_local_idx : Dict[int, Dict[int, List[int]]] = field(default_factory=dict)
     agent_graph : Dict[int, Set] = field(default_factory=dict)
     upper_lower_adjacency: Optional[list[Dict[int, list[int]]]] = None
-    
-    def __post_init__(self):
-        dimensions = list(self.cellularComplex.keys())
-        max_dim = max(dimensions)
-        
-        if self.clusteringParameters['dim'] < 0 or self.clusteringParameters['dim'] > max_dim or self.clusteringParameters['dim'] is None: raise ValueError("Invalid dimension for clustering.")
+    adjacency_graph: nx.Graph = field(default_factory=nx.Graph)
+    adjacency_trees: Dict[int, Dict[int, Dict[int, List[int]]]] = field(default_factory = dict)
 
-        
-        requested_dim = int(self.clusteringParameters.get('dim', 0))
-        B_down = self.cellularComplex.get(requested_dim, None)
-        B_up = self.cellularComplex.get(requested_dim + 1, None)
+    ## Explanation for adjacency_trees: [dim_orig, num_cell, dim_target] dim_orig is the dimension we look at the cell. num_cell is the id of the original cell we seek adjacency tree. dim_target is the dimension we seek adjacency to. The result is a list of cells that are adjacent to num_cell at dimension dim_target.
 
-        L_lower = 0
-        L_upper = 0
-
-        if B_down is not None:
-            L_lower = B_down.T @ B_down
-        if B_up is not None:
-            L_upper = B_up @ B_up.T
-        
-        # laplacian = L_lower + L_upper
-        laplacian = L_lower
-
-        # Construct loopless graph from L
+    def __generate_graph(self, laplacian):
         adjacency = copy(laplacian)
         np.fill_diagonal(adjacency, 0)  # Ensure diagonal is computed
         adjacency = (adjacency != 0).astype(int)
         G = nx.from_numpy_array(adjacency)
-        
-        communities = nx.community.greedy_modularity_communities(G = G, best_n = 7, resolution=1.5)
-        print(len(communities))
-        path = '../../data/Input/noaa_coastwatch_cellular/longlat.mat'
-        positions = loadmat(path)
-        coords = positions.get("longlat")
-        if coords is None or coords.shape[0] != G.number_of_nodes():
-            pos = nx.spring_layout(G, seed=0)
-        else:
-            pos = {i: (float(coords[i, 0]), float(coords[i, 1])) for i in range(coords.shape[0])}
+        return G
+    def plot_clusters(self): ## TODO: Continue to the plotter
+        path = self.clusteringParameters.get('position_path', None)
+        try:
+            positions = loadmat(path)
+            coords = positions.get(self.clusteringParameters['position_name'])
+            coords = {i: (float(coords[i, 0]), float(coords[i, 1])) for i in range(coords.shape[0])}
+        except:
+            coords = nx.spring_layout
+        # coords = positions.get("longlat")
+        # if coords is None or coords.shape[0] != G.number_of_nodes():
+        #     pos = nx.spring_layout(G, seed=0)
+        # else:
+        #     pos = {i: (float(coords[i, 0]), float(coords[i, 1])) for i in range(coords.shape[0])}
 
 
         
-        B_up = self.cellularComplex.get(1, None)
+        B_up = self.cellularComplex.get(int(self.clusteringParameters.get('dim', 0)), None)
         if B_up is not None:
             laplacian_node = B_up @ B_up.T
 
-        adjacency_node = copy(laplacian_node)
-        np.fill_diagonal(adjacency_node, 0)  # Ensure diagonal is computed
-        adjacency_node = (adjacency_node != 0).astype(int)
-        G_node = nx.from_numpy_array(adjacency_node)
+        G_lower = self.__generate_graph(laplacian=laplacian_node)
 
-        positions = {i: (float(coords[i, 0]), float(coords[i, 1])) for i in range(coords.shape[0])}
+        # adjacency_node = copy(laplacian_node)
+        # np.fill_diagonal(adjacency_node, 0)  # Ensure diagonal is computed
+        # adjacency_node = (adjacency_node != 0).astype(int)
+        # G_node = nx.from_numpy_array(adjacency_node)
 
             
         plt.figure()
@@ -130,6 +117,190 @@ class ModularityBasedClustering:
         ax.set_axis_off()
         plt.show()
         import pdb; pdb.set_trace()
+    
+    def __post_init__(self):
+        dimensions = list(self.cellularComplex.keys())
+        max_dim = max(dimensions)
+        
+        if self.clusteringParameters['dim'] < 0 or self.clusteringParameters['dim'] > max_dim or self.clusteringParameters['dim'] is None: raise ValueError("Invalid dimension for clustering.")
+
+        
+        requested_dim = int(self.clusteringParameters.get('dim', 0))
+        B_down = self.cellularComplex.get(requested_dim, None)
+        # B_up = self.cellularComplex.get(requested_dim + 1, None)
+
+        L_lower = 0
+        # L_upper = 0 # Do not consider L_upper as it creates irregulatiry 
+
+        if B_down is not None:
+            L_lower = B_down.T @ B_down
+        # if B_up is not None:
+        #     L_upper = B_up @ B_up.T
+        
+        # laplacian = L_lower + L_upper
+        laplacian = L_lower
+
+        # Construct loopless graph from L
+        G = self.__generate_graph(laplacian=laplacian)
+
+        Q = int(self.clusteringParameters['Q-hop'])
+        assert Q>=0, "Q should be greater or equal to 0!!!"
+        
+        laplacian_Q = matrix_power(a = laplacian, n = Q)
+
+        adjacency_self = laplacian_Q
+        np.fill_diagonal(a = adjacency_self, val = 0)
+        adjacency_self = adjacency_self != 0
+
+        self.__generate_adj_trees()
+        
+        
+        communities = nx.community.greedy_modularity_communities(G = G, best_n = self.clusteringParameters['best_n'], resolution=self.clusteringParameters['resolution'])
+        ## NIN BLOCK
+        for cluster_idx, cells in enumerate(communities):
+            self.Nin[cluster_idx][requested_dim] = list(cells)
+
+            for dim in range(0, max_dim):
+                if dim == requested_dim: continue
+
+                self.Nin[cluster_idx][dim] = set()
+
+                for cell in cells:
+                    self.Nin[cluster_idx][dim] |= self.adjacency_trees[requested_dim][cell][dim]
+
+        cluster_id = list(self.Nin.keys())
+
+        for c1,c2 in combinations(cluster_id, 2):
+            ott = (c1, c2)
+            tto = (c2, c1)
+
+            
+            adjacents_c1 = self.__get_self_adjacents(c = c1, dim = requested_dim, adjacency_self = adjacency_self)
+            adjacents_c2 = self.__get_self_adjacents(c = c2, dim = requested_dim, adjacency_self = adjacency_self)
+
+            ## NOUT BLOCK
+            self.Nout[ott][requested_dim] = set(adjacents_c1) & self.Nin[c2][requested_dim] - self.Nin[c1][requested_dim]
+
+            self.Nout[tto][requested_dim] = set(adjacents_c2) & self.Nin[c1][requested_dim] - self.Nin[c2][requested_dim]
+
+            ott_connection = False
+
+            for dim in range(0, max_dim):
+                if dim == requested_dim: continue
+
+                self.Nout[ott][dim] = set()
+                self.Nout[tto][dim] = set()
+                self.interface[ott][dim] = set()
+
+                for cell in adjacents_c1:
+                    self.Nout[ott][dim] |= self.adjacency_trees[requested_dim][cell][dim]
+
+                for cell in adjacents_c2:
+                    self.Nout[tto][dim] |= self.adjacency_trees[requested_dim][cell][dim]
+                
+                self.Nout[ott][dim] -= self.Nin[c1][dim]
+                self.Nout[tto][dim] -= self.Nin[c2][dim]
+
+                ## INTERFACE BLOCK
+
+                self.interface[ott][dim] = self.Nin[c1][dim] & self.Nin[c2][dim]
+
+                ott_connection = ott_connection or bool(self.interface[ott][dim])
+
+                ## CORRECT WITH RESPECT TO INTERFACE
+                self.Nout[ott][dim] -= self.interface[ott][dim]
+                self.Nout[tto][dim] -= self.interface[ott][dim]
+
+                self.Nin[c1][dim] -= self.interface[ott][dim]
+                self.Nin[c2][dim] -= self.interface[ott][dim]
+
+
+                ## TODO: Implement clustered_complexes, and global_to_local_idx
+            if ott_connection:
+                try: self.agent_graph[c1]
+                except: self.agent_graph[c1] = set()
+
+                self.agent_graph[c1].update({c2})
+
+                try: self.agent_graph[c2]
+                except: self.agent_graph[c2] = set()
+
+                self.agent_graph[c2].update({c1})
+                
+
+
+        
+        # path = '../../data/Input/noaa_coastwatch_cellular/longlat.mat'
+
+    def __get_self_adjacents(self, c, dim, adjacency_self):
+        laplacian_part = adjacency_self[self.Nin[c][dim], :]
+        adjacents = np.any(laplacian_part, axis = 0)
+        adjacents = np.where(adjacents)
+
+        return adjacents[0]
+    
+    def __generate_adj_trees(self):
+        self.adjacency_trees = dict()
+        all_dim = set(self.cellularComplex.keys()) | {0}
+
+        for dim_orig in all_dim:
+            self.adjacency_trees[dim_orig] = dict()
+            
+
+            if dim_orig == 0:
+                num_cells = self.cellularComplex[1].shape[0]
+            else:
+                num_cells = self.cellularComplex[dim_orig].shape[1]
+            
+            dim_boundaries = self.___generate_dim_boundaries(dim=dim_orig, all_dim=all_dim, num_cells=num_cells)
+
+            for cell in range(0, num_cells):
+                self.adjacency_trees[dim_orig][cell] = dict()
+
+                for dim_target in all_dim:
+                    self.adjacency_trees[dim_orig][cell][dim_target] = list(np.where(dim_boundaries[dim_target][cell, :])[0])
+    
+    def ___generate_dim_boundaries(self, dim, all_dim, num_cells):
+        dim_boundaries = dict()
+
+        boundary_lower = np.eye(num_cells, dtype = np.bool)
+
+        ## LOWER BOUNDARIES
+        for dim_target in range(dim - 1, -1, -1):
+            boundary_lower = self.cellularComplex[dim_target + 1].astype(np.bool) @ boundary_lower
+            dim_boundaries[dim_target] = boundary_lower.T
+        
+        boundary_upper = np.eye(num_cells, dtype = np.bool)
+
+        ## UPPER BOUNDARIES
+        for dim_target in range(dim + 1, max(all_dim)):
+            boundary_upper = boundary_upper @ self.cellularComplex[dim_target].astype(np.bool)
+            dim_boundaries[dim_target] = boundary_upper
+
+        B_down = self.cellularComplex.get(dim, None)
+        B_up = self.cellularComplex.get(dim + 1, None)
+        L_lower = 0
+        L_upper = 0
+
+        if B_down is not None:
+            L_lower = B_down.T @ B_down
+        if B_up is not None:
+            L_upper = B_up @ B_up.T
+
+        laplacian = L_lower + L_upper
+        laplacian = laplacian.astype(np.bool)
+        # np.fill_diagonal(a = laplacian, val = False)
+
+        dim_boundaries[dim] = laplacian
+
+        return dim_boundaries
+
+
+
+
+
+        
+            
 ## Continue from here.
 
 @dataclass

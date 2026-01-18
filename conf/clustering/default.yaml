@@ -1,5 +1,0 @@
-_target_: src.cc_utils.clustering.ModularityBasedClustering
-clusteringParameters:
-  d: 20
-  dim: 1
-  Q-hop: 5
