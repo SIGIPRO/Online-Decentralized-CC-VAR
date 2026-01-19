@@ -111,15 +111,75 @@ class ModularityBasedClustering:
             edge_list = list(set(edge_list))
 
             color = colors[head]
+            color_list = [list(color)[i]/1.5 for i in range(3)]
+            color_list.append(list(color)[-1])
+
             
-            nx.draw_networkx_nodes(G, coords, nodelist = node_list, node_color = [color], ax = ax)
-            nx.draw_networkx_edges(G, coords, edgelist = edge_list, edge_color = [color], ax = ax)
+            nx.draw_networkx_nodes(G, coords, nodelist = node_list, node_color = [color], ax = ax, node_size=50)
+            nx.draw_networkx_edges(G, coords, edgelist = edge_list, edge_color = color_list, ax = ax, width = 3.0)
+
+        
+
+        def order_nodes_cw(nodes, coords):
+            pts = np.array([(coords[n][0], coords[n][1]) for n in nodes], dtype=float)
+            centroid = pts.mean(axis=0)
+            angles = np.arctan2(pts[:, 1] - centroid[1], pts[:, 0] - centroid[0])
+            order = np.argsort(angles)  # ccw; use [::-1] for cw
+            return [nodes[i] for i in order]
+
+        for head in heads:
+            # head = heads[i]
+            color = colors[head]
+            
+            color_list = [list(color)[i]/2 for i in range(3)]
+            color_list.append(0.5)
+            
+            for cell in self.Nin[head][2]:
+                nodes = self.adjacency_trees[2][cell][0]
+                nodes = order_nodes_cw(nodes, coords)
+                cell_x = np.array([coords[nodes[i]][0] for i in range(len(nodes))])
+                cell_y = np.array([coords[nodes[i]][1] for i in range(len(nodes))])
+
+               
+
+                # import pdb; pdb.set_trace()
+
+                plt.fill(cell_x, cell_y, color = color_list, zorder = 0)
 
         interface_nodes = set()
+        # interface_cells = set()
+        color = colors[-1]
+            
+        color_list = [list(color)[i]/2 for i in range(3)]
+        color_list.append(0.5)
         for h in self.interface:
             interface_nodes |= set(self.interface[h][0])
+            curr_cells = self.interface[h][2]
+            color = colors[-1]
+            
+            color_list = [list(color)[i]/2 for i in range(3)]
+            color_list.append(0.5)
+            for cell in curr_cells:
+                nodes = nodes = self.adjacency_trees[2][cell][0]
+                nodes = order_nodes_cw(nodes, coords)
+                cell_x = np.array([coords[nodes[i]][0] for i in range(len(nodes))])
+                cell_y = np.array([coords[nodes[i]][1] for i in range(len(nodes))])
+                plt.fill(cell_x, cell_y, facecolor = color_list, edgecolor = (0,0,0,0), linewidth = 3.0, zorder = 0)
+
+
+            # interface_cells |= set(self.interface[h][2])
         
-        nx.draw_networkx_nodes(G, coords, nodelist = interface_nodes, node_color = [colors[-1]], ax = ax)
+        nx.draw_networkx_nodes(G, coords, nodelist = interface_nodes, node_color = [colors[-1]], ax = ax, node_size=50)
+
+        plt.tight_layout()
+        ax = plt.gca()
+        ax.set_axis_off()  # hides spines, ticks, labels
+        # or:
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        plt.savefig("clusters.pdf", format="pdf", bbox_inches="tight")
         plt.show()
 
 

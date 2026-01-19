@@ -64,7 +64,7 @@ def main(cfg: DictConfig):
     # import pdb; pdb.set_trace()
 
     clusters = instantiate(config=cfg.clustering, cellularComplex=cellularComplex)
-    import pdb; pdb.set_trace()
+    # import pdb; pdb.set_trace()
     clusters.plot_clusters()
 
   
