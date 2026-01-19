@@ -61,10 +61,13 @@ def main(cfg: DictConfig):
     print(cfg)
     outputDir = get_output_dir(cfg.dataset.dataset_name)
     cc_data, cellularComplex = load_data(cfg.dataset)
+    # import pdb; pdb.set_trace()
 
     clusters = instantiate(config=cfg.clustering, cellularComplex=cellularComplex)
-
     import pdb; pdb.set_trace()
+    clusters.plot_clusters()
+
+  
 
     T = None
     agent_list = dict()
