@@ -108,7 +108,7 @@ class CCIMPartialData(CellularComplexInMemoryData):
         self._global_idx = global_idx
         self._Nex = Nex
         
-        self._get_partial_data( Nout = Nout)
+        self._get_partial_data(Nout = Nout)
 
 
     def _get_partial_data(self, Nout):
@@ -124,7 +124,11 @@ class CCIMPartialData(CellularComplexInMemoryData):
                 if key not in Nout[cluster_head] or key not in self._interface[cluster_head]:
                     continue
                 out_slices = [self._global_idx[key].index(gidx) for gidx in Nout[cluster_head][key]]
+
+                # try:
                 interface_slices = [self._global_idx[key].index(gidx) for gidx in self._interface[cluster_head][key]]
+                # except:
+                #     import pdb; pdb.set_trace()
                 
                 self._interface_data[cluster_head][key] = np.array([self._data[key][ifs, :] for ifs in interface_slices])
 
@@ -144,12 +148,22 @@ class CCIMPartialData(CellularComplexInMemoryData):
         outgoing_data['odata'] = dict()
 
         for key in outgoing_data['ogidx']:
-            outgoing_data['odata'][key] = self._current_data[key][outgoing_data['ogidx'][key]]
+            ## TODO: Check this, there is an error.
+            try:
+                local_idx = [self._global_idx[key].index(ogidx) for ogidx in outgoing_data['ogidx'][key]]
+                outgoing_data['odata'][key] = self._current_data[key][np.array(local_idx)]
+            except: 
+                import pdb; pdb.set_trace()
+            
         outgoing_data['igidx'] = dict()
         outgoing_data['idata'] = dict()
         for key in self._interface[target]:
             outgoing_data['igidx'][key] = self._interface[target][key]
-            outgoing_data['idata'][key] = self._curr_interface_data[target][key]
+
+            try:
+                outgoing_data['idata'][key] = self._curr_interface_data[target][key]
+            except:
+                import pdb; pdb.set_trace()
 
         return outgoing_data
 
@@ -159,7 +173,9 @@ class CCIMPartialData(CellularComplexInMemoryData):
                 self._curr_interface_data[cluster_head] = dict()
             for key in self._interface_data[cluster_head]:
                 
-                self._curr_interface_data[cluster_head][key] = self._interface_data[cluster_head][key][:, self._curr_iteration]
+                try:
+                    self._curr_interface_data[cluster_head][key] = self._interface_data[cluster_head][key][:, self._curr_iteration]
+                except: continue
         super().__next__()
 
     

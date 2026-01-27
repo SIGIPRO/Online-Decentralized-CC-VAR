@@ -183,73 +183,6 @@ class ModularityBasedClustering:
         plt.show()
 
 
-
-
-        
-        # # B_up = self.cellularComplex.get(int(self.clusteringParameters.get('dim', 0)), None)
-        # # if B_up is not None:
-        # #     laplacian_node = B_up @ B_up.T
-
-        # # G_lower = self.__generate_graph(laplacian=laplacian_node)
-
-        # # adjacency_node = copy(laplacian_node)
-        # # np.fill_diagonal(adjacency_node, 0)  # Ensure diagonal is computed
-        # # adjacency_node = (adjacency_node != 0).astype(int)
-        # # G_node = nx.from_numpy_array(adjacency_node)
-
-            
-        # # plt.figure()
-    
-        # # import pdb; pdb.set_trace()
-
-        # plt.figure()
-        # cmap = plt.get_cmap("tab20" if len(communities) > 10 else "tab10")
-        # colors = [cmap(i) for i in np.linspace(0, 1, max(len(communities), 1))]
-        # # node_to_cluster = {
-        # #     node: cluster_idx
-        # #     for cluster_idx, subnodes in enumerate(communities)
-        # #     for node in subnodes
-        # # }
-        # # node_colors = [colors[node_to_cluster[node]] for node in G.nodes()] 
-        
-        # ax = plt.gca()
-        # for idx, subedges in enumerate(communities):
-            
-
-            
-        #     B_down_new = B_down[:, list(subedges)]
-        #     laplacian_new = B_down_new @ B_down_new.T
-        #     lap_diag = laplacian_new.diagonal()
-            
-        #     indices = list(np.nonzero(lap_diag)[0])
-        #     indices = [int(i) for i in indices]
-        #     # import pdb; pdb.set_trace()
-
-        #     B_down_new = B_down_new[indices, :]
-        #     laplacian_new = B_down_new @ B_down_new.T
-        #     adjacency_new = copy(laplacian_new)
-        #     np.fill_diagonal(adjacency_new, 0)  # Ensure diagonal is computed
-        #     adjacency_new = (adjacency_new != 0).astype(int)
-        #     G_new = nx.from_numpy_array(adjacency_new) 
-
-            
-        #     pos = dict()
-        
-        #     for i in range(len(indices)):
-        #         pos[i] = positions[indices[i]]
-
-        #     # import pdb; pdb.set_trace()
-            
-        #     # G_sub = G.subgraph(subnodes)
-        #     color = colors[idx]
-        #     nx.draw_networkx_nodes(G, pos, nodelist=list(G_new.nodes()), node_color=[color], ax=ax)
-        #     nx.draw_networkx_edges(G, pos, edgelist=list(G_new.edges()), edge_color=[color], ax=ax)
-        # # nx.draw_networkx_edges(G, pos, edgelist=list(G.edges()), edge_color="lightgray", alpha=0.5, ax=ax)
-        # # nx.draw_networkx_nodes(G, pos, nodelist=list(G.nodes()), node_color=node_colors, ax=ax)
-        # ax.set_axis_off()
-        # plt.show()
-        # import pdb; pdb.set_trace()
-    
     def __post_init__(self):
         dimensions = list(self.cellularComplex.keys())
         max_dim = max(dimensions)
@@ -260,26 +193,28 @@ class ModularityBasedClustering:
         requested_dim = int(self.clusteringParameters.get('dim', 0))
         self.dim = requested_dim
         B_down = self.cellularComplex.get(requested_dim, None)
-        # B_up = self.cellularComplex.get(requested_dim + 1, None)
+        B_up = self.cellularComplex.get(requested_dim + 1, None)
 
         L_lower = 0
-        # L_upper = 0 # Do not consider L_upper as it creates irregulatiry 
+        L_upper = 0 
 
         if B_down is not None:
             L_lower = B_down.T @ B_down
-        # if B_up is not None:
-        #     L_upper = B_up @ B_up.T
+        if B_up is not None:
+            L_upper = B_up @ B_up.T
         
         # laplacian = L_lower + L_upper
-        laplacian = L_lower
+        laplacian = L_lower # Do not consider L_upper as it creates irregularity when clustering
 
         # Construct loopless graph from L
         G = self.__generate_graph(laplacian=laplacian)
 
         Q = int(self.clusteringParameters['Q-hop'])
         assert Q>=0, "Q should be greater or equal to 0!!!"
+
+        laplacian_edge = L_lower + L_upper
         
-        laplacian_Q = matrix_power(a = laplacian, n = Q)
+        laplacian_Q = matrix_power(a = laplacian_edge, n = Q)
 
         adjacency_self = laplacian_Q
         np.fill_diagonal(a = adjacency_self, val = 0)
@@ -307,7 +242,7 @@ class ModularityBasedClustering:
                     self.Nin[cluster_idx][dim] |= set(self.adjacency_trees[requested_dim][cell][dim])
 
         cluster_id = list(self.Nin.keys())
-        # import pdb; pdb.set_trace()
+        
 
         for c1,c2 in combinations(cluster_id, 2):
             ott = (c1, c2)
@@ -316,36 +251,33 @@ class ModularityBasedClustering:
             
             adjacents_c1 = self.__get_self_adjacents(c = c1, dim = requested_dim, adjacency_self = adjacency_self)
             adjacents_c2 = self.__get_self_adjacents(c = c2, dim = requested_dim, adjacency_self = adjacency_self)
-            try: self.Nout[ott]
-            except: self.Nout[ott] = dict()
-            try: self.Nout[tto]
-            except: self.Nout[tto] = dict()
+          
             try: self.interface[ott]
             except: self.interface[ott] = dict()
-
+            ## TODO: CORRECT NOUT : NOUT SHOULD BE DEFINED IN TERMS OF AGENT GRAPH
 
             ## NOUT BLOCK
-            self.Nout[ott][requested_dim] = (set(adjacents_c1) & set(self.Nin[c2][requested_dim])) - set(self.Nin[c1][requested_dim])
+            # self.Nout[ott][requested_dim] = (set(adjacents_c1) & set(self.Nin[c2][requested_dim])) - set(self.Nin[c1][requested_dim])
 
-            self.Nout[tto][requested_dim] = (set(adjacents_c2) & set(self.Nin[c1][requested_dim])) - set(self.Nin[c2][requested_dim])
+            # self.Nout[tto][requested_dim] = (set(adjacents_c2) & set(self.Nin[c1][requested_dim])) - set(self.Nin[c2][requested_dim])
 
             ott_connection = False
 
             for dim in range(0, max_dim + 1):
                 if dim == requested_dim: continue
 
-                self.Nout[ott][dim] = set()
-                self.Nout[tto][dim] = set()
-                self.interface[ott][dim] = set()
+                # self.Nout[ott][dim] = set()
+                # self.Nout[tto][dim] = set()
+                # self.interface[ott][dim] = set()
 
-                for cell in adjacents_c1:
-                    self.Nout[ott][dim] |= set(self.adjacency_trees[requested_dim][cell][dim])
+                # for cell in adjacents_c1:
+                #     self.Nout[ott][dim] |= set(self.adjacency_trees[requested_dim][cell][dim])
 
-                for cell in adjacents_c2:
-                    self.Nout[tto][dim] |= set(self.adjacency_trees[requested_dim][cell][dim])
+                # for cell in adjacents_c2:
+                #     self.Nout[tto][dim] |= set(self.adjacency_trees[requested_dim][cell][dim])
                 
-                self.Nout[ott][dim] -= self.Nin[c1][dim]
-                self.Nout[tto][dim] -= self.Nin[c2][dim]
+                # self.Nout[ott][dim] -= self.Nin[c1][dim]
+                # self.Nout[tto][dim] -= self.Nin[c2][dim]
 
                 ## INTERFACE BLOCK
 
@@ -354,14 +286,15 @@ class ModularityBasedClustering:
                 ott_connection = ott_connection or bool(self.interface[ott][dim])
 
                 ## CORRECT WITH RESPECT TO INTERFACE
-                self.Nout[ott][dim] -= self.interface[ott][dim]
-                self.Nout[tto][dim] -= self.interface[ott][dim]
+                # self.Nout[ott][dim] -= self.interface[ott][dim]
+                # self.Nout[tto][dim] -= self.interface[ott][dim]
 
                 self.Nin[c1][dim] -= self.interface[ott][dim]
                 self.Nin[c2][dim] -= self.interface[ott][dim]
 
-
-                ## TODO: Implement clustered_complexes, and global_to_local_idx
+            adjacents_c1 =set(adjacents_c1) & set(self.Nin[c2][requested_dim])
+            adjacents_c2 = set(adjacents_c2) & set(self.Nin[c1][requested_dim])
+            
             if ott_connection:
                 try: self.agent_graph[c1]
                 except: self.agent_graph[c1] = set()
@@ -373,6 +306,53 @@ class ModularityBasedClustering:
 
                 self.agent_graph[c2].update({c1})
 
+                try: self.Nout[ott]
+                except: self.Nout[ott] = dict()
+                try: self.Nout[tto]
+                except: self.Nout[tto] = dict()
+
+                
+
+                # self.Nout[ott][requested_dim] = (set(adjacents_c1) & set(self.Nin[c2][requested_dim])) - set(self.Nin[c1][requested_dim])
+                self.Nout[ott][requested_dim] =set(adjacents_c1) - set(self.Nin[c1][requested_dim])
+                # self.Nout[tto][requested_dim] = (set(adjacents_c2) & set(self.Nin[c1][requested_dim])) - set(self.Nin[c2][requested_dim])
+                self.Nout[tto][requested_dim] =set(adjacents_c2) - set(self.Nin[c2][requested_dim])
+
+                for dim in range(0, max_dim + 1):
+                    if dim == requested_dim:
+                        continue
+                    if dim not in self.Nout[ott]:
+                        self.Nout[ott][dim] = set()
+                    if dim not in self.Nout[tto]:
+                        self.Nout[tto][dim] = set()
+
+                    for cell in adjacents_c1:
+                        self.Nout[ott][dim] |= set(self.adjacency_trees[requested_dim][cell][dim])
+                    for cell in adjacents_c2:
+                        self.Nout[tto][dim] |= set(self.adjacency_trees[requested_dim][cell][dim])
+
+                    # self.Nout[ott][dim] -= self.Nin[c1][dim]
+                    # self.Nout[tto][dim] -= self.Nin[c2][dim]
+
+                    # self.Nout[ott][dim] &= self.Nin[c2][dim]
+                    # self.Nout[tto][dim] &= self.Nin[c1][dim]
+
+                    
+                    # if inter:
+                    self.Nout[ott][dim] -= self.interface[ott][dim]
+                    self.Nout[tto][dim] -= self.interface[ott][dim]
+        for c1 in self.agent_graph:
+            
+            for c2 in self.agent_graph[c1]:
+                ott = (c1, c2)
+
+                for dim in range(0, max_dim + 1):
+                    # self.Nout[ott][dim] -= set(self.Nin[c1][dim])
+                    self.Nout[ott][dim] &= set(self.Nin[c2][dim])
+
+                pass
+                
+        
         
         for dim in set(self.cellularComplex.keys()) | {0}:
             for h1 in self.Nin:
@@ -384,8 +364,11 @@ class ModularityBasedClustering:
 
                 for h2 in self.agent_graph.get(h1, set()):
                     key = (h1, h2)
+                    key_r = (h2, h1)
                     dim_adjacencies.update(self.interface.get(key, {}).get(dim, set()))
                     lower_adjacencies.update(self.interface.get(key, {}).get(dim - 1, set()))
+                    dim_adjacencies.update(self.interface.get(key_r, {}).get(dim, set()))
+                    lower_adjacencies.update(self.interface.get(key_r, {}).get(dim - 1, set()))
                     dim_adjacencies.update(self.Nout.get(key, {}).get(dim, set()))
                     lower_adjacencies.update(self.Nout.get(key, {}).get(dim - 1, set()))
                 
@@ -394,7 +377,7 @@ class ModularityBasedClustering:
                     self.global_to_local_idx[h1] = dict()
                 if dim not in self.global_to_local_idx[h1]:
                     self.global_to_local_idx[h1][dim] = list()
-
+                # if h1 == 2 and dim == 0: import pdb; pdb.set_trace()
                 # global_idx = list(lower_adjacencies)
                 global_idx = list(dim_adjacencies)
                 # local_idx = [i for i in range(len(global_idx))]
