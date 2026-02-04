@@ -1,4 +1,5 @@
 _target_: src.implementations.mixing.kgt.KGTMixingModel
+_convert_: all
 eta: 
   K: 5
   c: 0.01

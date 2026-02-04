@@ -1,3 +1,4 @@
+import numpy as np
 class BaseModel:
     """
     A generic Task model. 
@@ -33,7 +34,16 @@ class BaseModel:
         self._params = new_params
 
     def update_params(self, update_term):
-        self._params += update_term
+        # import pdb; pdb.set_trace()
+        if len(update_term.shape) == 1:
+                
+                update_term = np.reshape(update_term, shape = (update_term.shape[0], 1))
+
+        try:
+            self._params += update_term
+            ## TODO: For some reason update_term is 35 by 35 which should be handled 
+        except:
+            import pdb; pdb.set_trace()
 
     def update_internal_state(self, new_data):
         """

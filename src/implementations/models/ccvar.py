@@ -2,6 +2,10 @@ from ccvar import CCVAR
 from src.core import BaseModel
 import numpy as np
 
+
+class CCVARPartial(CCVAR):
+    pass
+
 class CCVARModel(BaseModel):
     def __init__(self, algorithmParam, cellularComplex):
         ccvarParams = (algorithmParam, cellularComplex)
@@ -32,7 +36,9 @@ class CCVARModel(BaseModel):
 
             grad.append(curr_grad)
 
-            if self._param_slices == []:
+            try:
+                self._param_slices[key]
+            except:
                 first_index = self._param_length
                 last_index = first_index + curr_grad.shape[0]
                 self._param_slices.append(slice(first_index, last_index))
@@ -53,8 +59,9 @@ class CCVARModel(BaseModel):
     
     def set_params(self, new_params):
         super().set_params(new_params)
+        # import pdb; pdb.set_trace()
         for key in self._algorithm._data_keys:
-            param_slice = self._algorithm._param_slices[key]
+            param_slice = self._param_slices[key]
             self._algorithm._theta[key] = new_params[param_slice].reshape(-1,1)
 
     def estimate(self, input_data, **kwargs):

@@ -5,8 +5,10 @@ from pathlib import Path
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig
-from cellexp_util.metric.metric_utils import MetricManager
+from cellexp_util.metric.metric_utils import MetricManager # type: ignore[import-untyped]
+from tqdm import tqdm # type: ignore[import-untyped]
 
+## TODO: Implement CCVARPartial
 
 def load_data(datasetParams):
 
@@ -58,27 +60,21 @@ def get_output_dir(dataset_name):
 
 @hydra.main(version_base=None, config_path='../conf', config_name='config.yaml')
 def main(cfg: DictConfig):
-    print(cfg)
+
     outputDir = get_output_dir(cfg.dataset.dataset_name)
     cc_data, cellularComplex = load_data(cfg.dataset)
-    # import pdb; pdb.set_trace()
 
     clusters = instantiate(config=cfg.clustering, cellularComplex=cellularComplex)
-    # import pdb; pdb.set_trace()
-    # clusters.plot_clusters()
-
-  
 
     T = None
     agent_list = dict()
-    # print(clusters)
+
     for cluster_head in clusters.clustered_complexes:
-        print(cluster_head)
+
         processed_data = dict()
         global_idx = clusters.global_to_local_idx[cluster_head]
-        # print(global_idx)
 
-        ## TODO: Check the error in global_to_local_idx when creating datasets
+
         for dim in cc_data:
             processed_data[dim] = cc_data[dim][global_idx[dim],:]
         
@@ -88,40 +84,23 @@ def main(cfg: DictConfig):
             except: continue
             idx_neighbor = 1 - idx_head
             interface[head_tuple[idx_neighbor]] = clusters.interface[head_tuple]
-        
-        # if cluster_head == 3: import pdb; pdb.set_trace()
 
         Nout = dict()
         Nex = dict()
 
         some_list = []
-        # dim = 0
 
-        # import pdb; pdb.set_trace()
 
         for head_tuple in clusters.Nout:
             if cluster_head not in head_tuple: continue
 
             if cluster_head == head_tuple[0]:
                 Nout[head_tuple[1]] = clusters.Nout[head_tuple]
-                # print(head_tuple)
-                # print()
-                # Nex[head_tuple[1]] = clusters.Nout[head_tuple]
-                # print(clusters.agent_graph)
-                # print(Nex[head_tuple[1]].keys())
-                # try:
-                #     some_list.append([n in clusters.Nin[cluster_head][dim] for n in Nex[head_tuple[1]][dim]])
-                # except:
-                #     continue
+ 
                 
             elif cluster_head == head_tuple[1]:
                 Nex[head_tuple[0]] = clusters.Nout[head_tuple]
-                # Nout[head_tuple[0]] = clusters.Nout[head_tuple]
-
-                print(head_tuple)
-                # Nex[head_tuple[1]] = clusters.Nout[head_tuple]
-                # print(clusters.agent_graph)
-                # print(Nex[head_tuple[1]].keys())
+        
                 try:
                     for n in Nex[head_tuple[0]][dim]:
 
@@ -131,7 +110,6 @@ def main(cfg: DictConfig):
             else: 
                 continue
         
-        # import pdb; pdb.set_trace()
   
         protocol = instantiate(cfg.protocol)
         
@@ -150,8 +128,6 @@ def main(cfg: DictConfig):
 
         mixing = instantiate(cfg.mixing, weights = weights)
         imputer = instantiate(cfg.imputer)
-        ## TODO 4: Implement metric, results plotter and cellular complex plotter.
-        ## TODO 5: Check the code from beginning to end.
 
         currAgent = BaseAgent(
             cluster_id = cluster_head,
@@ -169,13 +145,10 @@ def main(cfg: DictConfig):
         else:
             if currAgent._data._T_total < T:
                 T = currAgent._data._T_total
-        # print(agent_list)
 
-    # print(T)
 
-    # import pdb; pdb.set_trace()
-    for t in range(0,T):
-        print(t)
+    for t in tqdm(range(0,T)):
+
         for cluster_head in agent_list:
             agent_list[cluster_head].iterate_data(t)
             agent_list[cluster_head].send_data(t)
@@ -193,6 +166,8 @@ def main(cfg: DictConfig):
             params_box = agent_list[cluster_head].outbox['params']
             for cluster_id in params_box:
                 agent_list[cluster_id].push_to_inbox(cluster_head, params_box[cluster_id], "params")
+
+            print(params_box)
 
         for cluster_head in agent_list:
             agent_list[cluster_head].receive_params()

@@ -46,7 +46,7 @@ class BaseAgent:
             if data is not None:
                 incoming_data_map[cluster_id] = data
         
-        self._data = self._imputer.impute(self._data, incoming_data_map)
+        self._data = self._imputer.impute(self._data, incoming_data_map = incoming_data_map)
 
     def prepare_params(self, t):
         if not self._protocol.should_send_params(t):
@@ -86,8 +86,10 @@ class BaseAgent:
         self._protocol.push_to_inbox(source, payload, msg_type)
 
     def local_step(self):
-        local_grad = self._model.get_gradient(agrregated_data = self._data)
+        local_grad = self._model.get_gradient(aggregated_data = self._data)
         update_term = self._mixing_model.apply_correction(local_gradient = local_grad)
+
+        # import pdb; pdb.set_trace()
         self._model.update_params(update_term = update_term)
 
     def estimate(self, **kwargs):

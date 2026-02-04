@@ -1,4 +1,5 @@
 from src.core import BaseMixingModel
+import numpy as np
 
 
 class KGTMixingModel(BaseMixingModel):
@@ -8,6 +9,8 @@ class KGTMixingModel(BaseMixingModel):
         self._eta['Kc'] = self._eta['K'] * self._eta['c']
         self._eta['Kcs'] = self._eta['K'] * self._eta['c'] * self._eta['s']
         self._aux = 0
+
+        # import pdb; pdb.set_trace()
 
         if isinstance(initial_aux_vars, dict):
             self._correction = initial_aux_vars.get('correction', 0)
@@ -22,7 +25,8 @@ class KGTMixingModel(BaseMixingModel):
             self._correction += self._weights.get(neighbor, 0) * self._aux
 
         def update_params(eta, history, tracking):
-            return history - eta * tracking
+            update_term = history - eta * tracking
+            return update_term
 
         new_params = self._weights.get('self', 0) * update_params(self._eta['Kcs'], self._history.get('self', 0), self._aux)
         for neighbor in neighbor_aux:
@@ -36,10 +40,13 @@ class KGTMixingModel(BaseMixingModel):
 
         
     def apply_correction(self, local_gradient):
-        return self._eta['c'] * (local_gradient + self._correction)
+        try:
+            return self._eta['c'] * (local_gradient.flatten() + self._correction.flatten())
+        except AttributeError:
+            return self._eta['c'] * (local_gradient + self._correction)
 
     def update_aux(self, **kwargs):
         local_params = kwargs.get('local_params', 0)
-        self._aux = 1/(self._eta['Kc']) * (- local_params + self._history['self'])
+        self._aux = 1/(self._eta['Kc']) * (- local_params + self._history.get('self', 0))
         
 
