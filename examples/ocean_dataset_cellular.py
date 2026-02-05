@@ -5,10 +5,91 @@ from pathlib import Path
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig
-from cellexp_util.metric.metric_utils import MetricManager # type: ignore[import-untyped]
+from cellexp_util.metric.metric_utils import MetricManager, general_metric
+from cellexp_util.registry.metric_registry import ensure_metrics_registered
 from tqdm import tqdm # type: ignore[import-untyped]
 
+
+def append_same_dim(prediction, groundTruth, dim):
+    gt = []; y = []
+    for cluster_head in groundTruth:
+        curr_gt = groundTruth[cluster_head][dim]
+        curr_y = prediction[cluster_head][dim]
+
+        y.append(curr_y)
+        gt.append(curr_gt)
+
+    try: y = np.vstack(y).flatten()
+    except: y = np.hstack(y).flatten()
+
+    try: gt = np.vstack(gt).flatten()
+    except: gt = np.hstack(gt).flatten()
+
+    return y, gt
+
+@general_metric(name="tvNMSE_distributed", output="scalar")
+def tvNMSE_distributed_metric(*, prediction, groundTruth, dim, **_):
+    y, gt = append_same_dim(prediction, groundTruth, dim)
+    return ((y - gt) ** 2).mean() / (gt ** 2).mean()
+
+@general_metric(name="tvMAE_distributed", output="scalar")
+def tvMAE_distributed_metric(*, prediction, groundTruth, dim, **_):
+    y, gt = append_same_dim(prediction, groundTruth, dim)
+    return np.abs(y - gt).mean()
+
+@general_metric(name="tvMAPE_distributed", output="scalar")
+def tvMAPE_distributed_metric(*, prediction, groundTruth, dim, **_):
+    y, gt = append_same_dim(prediction, groundTruth, dim)
+    m = gt != 0
+    return (np.abs((y[m] - gt[m]) / gt[m]).mean() * 100) if m.any() else np.nan
+
+# stateful rolling NMSE – just use manager from kwargs
+@general_metric(name="rollingNMSE_distributed", output="scalar")
+def rollingNMSE_distributed_metric(*, prediction, groundTruth, manager, dim, **_):
+    # y = groundTruth["s"]; yhat = prediction
+
+    y, gt = append_same_dim(prediction, groundTruth, dim)
+    
+    manager._cumulative_energy += gt ** 2
+    manager._nmse_n += (y - gt) ** 2
+    with np.errstate(divide="ignore", invalid="ignore"):
+        nmse_n = np.where(manager._cumulative_energy != 0,
+                          manager._nmse_n / manager._cumulative_energy, 0.0)
+    return float(nmse_n.mean())
+
+# stateful rolling MAE – just use manager from kwargs
+@general_metric(name="rollingMAE_distributed", output="scalar")
+def rollingMAE_distributed_metric(*, manager, i, **_):
+    try:
+        return float(np.mean(manager._errors['tvMAE_distributedsingle'][:i + 1]))
+    except Exception:
+        return np.nan
+
+# stateful rolling NMSE – just use manager from kwargs
+@general_metric(name="rollingMAPE", output="scalar")
+def rollingMAPE_metric(*, manager, i, **_):
+    try:
+        return float(np.mean(manager._errors['tvMAPE_distributedsingle'][:i + 1]))
+    except Exception:
+        return np.nan
+
 ## TODO: Implement CCVARPartial
+
+""" NOTE: 
+1. The divergence can be arising from not normalizing the features as in the CC-VAR paper. This is done already. Did not work.
+ a. More severe error in implementation it seems. 
+i. Taking the c very small, like 5e-6, solved the divergence issue but one should look at the implementation also. Partial solution +-.
+
+2. KGTMixing is also causing divergence. Hyperparameters should be optimized.
+
+"""
+
+""" ISSUES:  
+1. For some reason, CC-VAR explodes even with local steps. This issue is partially solved +-
+2. For each agent edge signals are full of data which should not be the case. This issue solved. ++
+3. CC-VAR is wrongly used. The problem is that it takes all of the elements of the agent which should not be the case. Not started --
+
+"""
 
 def load_data(datasetParams):
 
@@ -40,7 +121,6 @@ def load_data(datasetParams):
         0 : signal_node,
         1 : signal_edge,
         2 : signal_poly
-
     }
 
     # 4. Setup Complex & Parameters
@@ -52,8 +132,8 @@ def load_data(datasetParams):
 
 def get_output_dir(dataset_name):
     current_dir = Path.cwd() 
-    output_dir = (current_dir / ".." / ".." / "data" / "Output" / dataset_name / "Figures").resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = lambda dim: (current_dir / ".." / ".." / "data" / "Output" / dataset_name / f"Results_{dim}").resolve()
+    # output_dir.mkdir(parents=True, exist_ok=True)
 
     return output_dir
 
@@ -62,7 +142,11 @@ def get_output_dir(dataset_name):
 def main(cfg: DictConfig):
 
     outputDir = get_output_dir(cfg.dataset.dataset_name)
+    ensure_metrics_registered()
+
     cc_data, cellularComplex = load_data(cfg.dataset)
+
+
 
     clusters = instantiate(config=cfg.clustering, cellularComplex=cellularComplex)
 
@@ -77,7 +161,8 @@ def main(cfg: DictConfig):
 
         for dim in cc_data:
             processed_data[dim] = cc_data[dim][global_idx[dim],:]
-        
+            
+        # print(processed_data)
         interface = dict()
         for head_tuple in clusters.interface:
             try: idx_head = head_tuple.index(cluster_head)
@@ -145,8 +230,15 @@ def main(cfg: DictConfig):
         else:
             if currAgent._data._T_total < T:
                 T = currAgent._data._T_total
+    
 
+    metrics = dict()
 
+    for dim in cc_data:
+        dim_N = cc_data[dim].shape[0]
+        curr_output = outputDir(dim).mkdir(parents = True, exist_ok = True)
+        metrics[dim] = MetricManager(N = dim_N, T = T, savePath = curr_output)
+    import pdb; pdb.set_trace()
     for t in tqdm(range(0,T)):
 
         for cluster_head in agent_list:
@@ -167,11 +259,14 @@ def main(cfg: DictConfig):
             for cluster_id in params_box:
                 agent_list[cluster_id].push_to_inbox(cluster_head, params_box[cluster_id], "params")
 
-            print(params_box)
+            # print(params_box)
+            # import pdb; pdb.set_trace()
 
         for cluster_head in agent_list:
             agent_list[cluster_head].receive_params()
-            agent_list[cluster_head].do_consensus()
+            ## TODO: Implement metric calculation here.
+            print(f"Forecasted Value: {agent_list[cluster_head].estimate(input_data = None)} ####")
+            # agent_list[cluster_head].do_consensus()
 
 if __name__ == "__main__":
     main()

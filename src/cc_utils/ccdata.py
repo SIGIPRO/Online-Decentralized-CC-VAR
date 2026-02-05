@@ -121,16 +121,20 @@ class CCIMPartialData(CellularComplexInMemoryData):
             if cluster_head not in self._interface_data:
                 self._interface_data[cluster_head] = dict()
             for key in self._data:
-                if key not in Nout[cluster_head] or key not in self._interface[cluster_head]:
-                    continue
-                out_slices = [self._global_idx[key].index(gidx) for gidx in Nout[cluster_head][key]]
+                # if key not in Nout[cluster_head] or key not in self._interface[cluster_head]:
+                #     continue
+                if key in Nout[cluster_head]:
+                    out_slices = [self._global_idx[key].index(gidx) for gidx in Nout[cluster_head][key]]
 
                 # try:
-                interface_slices = [self._global_idx[key].index(gidx) for gidx in self._interface[cluster_head][key]]
+                if key in self._interface[cluster_head]:
+                    interface_slices = [self._global_idx[key].index(gidx) for gidx in self._interface[cluster_head][key]]
                 # except:
                 #     import pdb; pdb.set_trace()
                 
-                self._interface_data[cluster_head][key] = np.array([self._data[key][ifs, :] for ifs in interface_slices])
+                    self._interface_data[cluster_head][key] = np.array([self._data[key][ifs, :] for ifs in interface_slices])
+                else:
+                    interface_slices = []
 
                 self._data[key][out_slices, :] = 0
                 self._data[key][interface_slices, :] = 0

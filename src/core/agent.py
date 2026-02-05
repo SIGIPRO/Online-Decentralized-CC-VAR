@@ -45,7 +45,7 @@ class BaseAgent:
             data = self._protocol.receive_data(cluster_id)
             if data is not None:
                 incoming_data_map[cluster_id] = data
-        
+
         self._data = self._imputer.impute(self._data, incoming_data_map = incoming_data_map)
 
     def prepare_params(self, t):
@@ -87,6 +87,8 @@ class BaseAgent:
 
     def local_step(self):
         local_grad = self._model.get_gradient(aggregated_data = self._data)
+        if self._cluster_id == 0 and self._t == 360:
+            import pdb; pdb.set_trace()
         update_term = self._mixing_model.apply_correction(local_gradient = local_grad)
 
         # import pdb; pdb.set_trace()
