@@ -62,7 +62,7 @@ class ModularityBasedClustering:
 
 
 
-    def plot_clusters(self): ## TODO: Continue to the plotter
+    def plot_clusters(self):
 
         assert bool(self.Nin) and bool(self.interface) and bool(self.adjacency_trees), "Run plot_clusters after clusters are handled!!!"
         assert max(self.cellularComplex.keys()) < 3, "Only cellular complexes with maximum dimension 2 can be drawn!!!"
@@ -254,7 +254,6 @@ class ModularityBasedClustering:
           
             try: self.interface[ott]
             except: self.interface[ott] = dict()
-            ## TODO: CORRECT NOUT : NOUT SHOULD BE DEFINED IN TERMS OF AGENT GRAPH
 
             ## NOUT BLOCK
             # self.Nout[ott][requested_dim] = (set(adjacents_c1) & set(self.Nin[c2][requested_dim])) - set(self.Nin[c1][requested_dim])

@@ -41,7 +41,6 @@ class BaseModel:
 
         try:
             self._params += update_term
-            ## TODO: For some reason update_term is 35 by 35 which should be handled 
         except:
             import pdb; pdb.set_trace()
 

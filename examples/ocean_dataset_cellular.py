@@ -27,24 +27,24 @@ def append_same_dim(prediction, groundTruth, dim):
 
     return y, gt
 
-@general_metric(name="tvNMSE_distributed", output="scalar")
+@general_metric(name="tvNMSE", output="scalar")
 def tvNMSE_distributed_metric(*, prediction, groundTruth, dim, **_):
     y, gt = append_same_dim(prediction, groundTruth, dim)
     return ((y - gt) ** 2).mean() / (gt ** 2).mean()
 
-@general_metric(name="tvMAE_distributed", output="scalar")
+@general_metric(name="tvMAE", output="scalar")
 def tvMAE_distributed_metric(*, prediction, groundTruth, dim, **_):
     y, gt = append_same_dim(prediction, groundTruth, dim)
     return np.abs(y - gt).mean()
 
-@general_metric(name="tvMAPE_distributed", output="scalar")
+@general_metric(name="tvMAPE", output="scalar")
 def tvMAPE_distributed_metric(*, prediction, groundTruth, dim, **_):
     y, gt = append_same_dim(prediction, groundTruth, dim)
     m = gt != 0
     return (np.abs((y[m] - gt[m]) / gt[m]).mean() * 100) if m.any() else np.nan
 
 # stateful rolling NMSE – just use manager from kwargs
-@general_metric(name="rollingNMSE_distributed", output="scalar")
+@general_metric(name="rollingNMSE", output="scalar")
 def rollingNMSE_distributed_metric(*, prediction, groundTruth, manager, dim, **_):
     # y = groundTruth["s"]; yhat = prediction
 
@@ -58,10 +58,10 @@ def rollingNMSE_distributed_metric(*, prediction, groundTruth, manager, dim, **_
     return float(nmse_n.mean())
 
 # stateful rolling MAE – just use manager from kwargs
-@general_metric(name="rollingMAE_distributed", output="scalar")
+@general_metric(name="rollingMAE", output="scalar")
 def rollingMAE_distributed_metric(*, manager, i, **_):
     try:
-        return float(np.mean(manager._errors['tvMAE_distributedsingle'][:i + 1]))
+        return float(np.mean(manager._errors['tvMAEsingle'][:i + 1]))
     except Exception:
         return np.nan
 
@@ -69,7 +69,7 @@ def rollingMAE_distributed_metric(*, manager, i, **_):
 @general_metric(name="rollingMAPE", output="scalar")
 def rollingMAPE_metric(*, manager, i, **_):
     try:
-        return float(np.mean(manager._errors['tvMAPE_distributedsingle'][:i + 1]))
+        return float(np.mean(manager._errors['tvMAPEsingle'][:i + 1]))
     except Exception:
         return np.nan
 
@@ -81,14 +81,12 @@ def rollingMAPE_metric(*, manager, i, **_):
 i. Taking the c very small, like 5e-6, solved the divergence issue but one should look at the implementation also. Partial solution +-.
 
 2. KGTMixing is also causing divergence. Hyperparameters should be optimized.
-
 """
 
 """ ISSUES:  
 1. For some reason, CC-VAR explodes even with local steps. This issue is partially solved +-
 2. For each agent edge signals are full of data which should not be the case. This issue solved. ++
 3. CC-VAR is wrongly used. The problem is that it takes all of the elements of the agent which should not be the case. Not started --
-
 """
 
 def load_data(datasetParams):

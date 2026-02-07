@@ -152,7 +152,6 @@ class CCIMPartialData(CellularComplexInMemoryData):
         outgoing_data['odata'] = dict()
 
         for key in outgoing_data['ogidx']:
-            ## TODO: Check this, there is an error.
             try:
                 local_idx = [self._global_idx[key].index(ogidx) for ogidx in outgoing_data['ogidx'][key]]
                 outgoing_data['odata'][key] = self._current_data[key][np.array(local_idx)]
