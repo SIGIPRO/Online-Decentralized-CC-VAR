@@ -86,7 +86,8 @@ i. Taking the c very small, like 5e-6, solved the divergence issue but one shoul
 """ ISSUES:  
 1. For some reason, CC-VAR explodes even with local steps. This issue is partially solved +-
 2. For each agent edge signals are full of data which should not be the case. This issue solved. ++
-3. CC-VAR is wrongly used. The problem is that it takes all of the elements of the agent which should not be the case. Not started --
+3. CC-VAR is wrongly used. The problem is that it takes all of the elements of the agent which should not be the case. Partially implemented +- Look at get_gradient method of the CCVARPartial to make it complete. Also add CCVARPartialModel for completeness. --
+4. LabelPropagator was also implemented. ++
 """
 
 def load_data(datasetParams):
@@ -219,7 +220,8 @@ def main(cfg: DictConfig):
             protocol = protocol,
             mix = mixing,
             imputer = imputer,
-            neighbors = clusters.agent_graph[cluster_head] #Check the usage of clusters
+            neighbors = clusters.agent_graph[cluster_head],
+            cellularComplex = clusters.clustered_complexes[cluster_head]
         )
         agent_list[cluster_head] = currAgent
 

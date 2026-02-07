@@ -1,6 +1,6 @@
 class BaseAgent:
 
-    def __init__(self, cluster_id, model, data, protocol, mix, imputer, neighbors):
+    def __init__(self, cluster_id, model, data, protocol, mix, imputer, neighbors, cellularComplex):
 
         self._cluster_id = cluster_id
 
@@ -10,6 +10,7 @@ class BaseAgent:
         self._mixing_model = mix
         self._imputer = imputer
         self._neighbor_clusters = neighbors
+        self._cellularComplex = cellularComplex
         self._neighbor_params = {}
         self._neighbor_aux = {}
         self._t = 0
@@ -46,7 +47,9 @@ class BaseAgent:
             if data is not None:
                 incoming_data_map[cluster_id] = data
 
-        self._data = self._imputer.impute(self._data, incoming_data_map = incoming_data_map)
+        self._data = self._imputer.impute(self._data,
+                                        incoming_data_map = incoming_data_map,
+                                        metadata = self._cellularComplex)
 
     def prepare_params(self, t):
         if not self._protocol.should_send_params(t):

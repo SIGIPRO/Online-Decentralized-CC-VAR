@@ -183,6 +183,10 @@ class CCVARModel(BaseModel):
         self._param_length = 0
         self._eta = dict()
 
+    @property
+    def Hodge_Laplacian(self):
+        return self
+
     def get_gradient(self, aggregated_data, **kwargs):
 
         featureDict = self._algorithm._feature_gen()

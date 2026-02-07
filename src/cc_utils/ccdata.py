@@ -139,7 +139,9 @@ class CCIMPartialData(CellularComplexInMemoryData):
                 self._data[key][out_slices, :] = 0
                 self._data[key][interface_slices, :] = 0
 
-
+    @property
+    def data(self):
+        return self._current_data
     def export_data(self, target):
         if target not in self._Nex:
             return None
