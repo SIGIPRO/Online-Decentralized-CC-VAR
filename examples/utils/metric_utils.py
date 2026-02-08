@@ -166,6 +166,36 @@ def _resolve_eval_arrays(prediction, groundTruth, dim=None):
     return y, gt, mask
 
 
+def _extract_param_matrix(params):
+    if isinstance(params, dict):
+        if not params:
+            return np.empty((0, 0), dtype=float)
+        rows = []
+        for key in sorted(params.keys()):
+            rows.append(np.asarray(params[key], dtype=float).reshape(-1))
+        min_len = min(row.shape[0] for row in rows)
+        if min_len == 0:
+            return np.empty((len(rows), 0), dtype=float)
+        matrix = np.vstack([row[:min_len] for row in rows])
+        return matrix
+
+    arr = np.asarray(params, dtype=float)
+    if arr.ndim == 1:
+        return arr.reshape(1, -1)
+    if arr.ndim == 2:
+        return arr
+    return arr.reshape(arr.shape[0], -1)
+
+
+def _extract_global_vector(groundTruth):
+    if isinstance(groundTruth, dict):
+        for key in ("global_params", "global_vector", "global", "s"):
+            if key in groundTruth:
+                return np.asarray(groundTruth[key], dtype=float).reshape(-1)
+        return np.array([], dtype=float)
+    return np.asarray(groundTruth, dtype=float).reshape(-1)
+
+
 @general_metric(name="tvNMSE", output="scalar")
 def tvNMSE_distributed_metric(*, prediction, groundTruth, dim=None, **_):
     y, gt, mask = _resolve_eval_arrays(prediction, groundTruth, dim)
@@ -227,5 +257,48 @@ def rollingMAE_distributed_metric(*, manager, i, **_):
 def rollingMAPE_metric(*, manager, i, **_):
     try:
         return float(np.mean(manager._errors["tvMAPEsingle"][: i + 1]))
+    except Exception:
+        return np.nan
+
+
+@general_metric(name="tvSelfDisagreement", output="scalar")
+def tvSelfDisagreement_metric(*, prediction, **_):
+    theta = _extract_param_matrix(prediction)
+    if theta.size == 0 or theta.shape[0] <= 1:
+        return 0.0
+    centered = theta - np.mean(theta, axis=0, keepdims=True)
+    return float(np.mean(centered ** 2))
+
+
+@general_metric(name="rollingSelfDisagreement", output="scalar")
+def rollingSelfDisagreement_metric(*, manager, i, **_):
+    try:
+        return float(np.mean(manager._errors["tvSelfDisagreementsingle"][: i + 1]))
+    except Exception:
+        return np.nan
+
+
+@general_metric(name="tvGlobalDisagreement", output="scalar")
+def tvGlobalDisagreement_metric(*, prediction, groundTruth, **_):
+    theta = _extract_param_matrix(prediction)
+    if theta.size == 0:
+        return np.nan
+
+    global_theta = _extract_global_vector(groundTruth)
+    if global_theta.size == 0:
+        return np.nan
+
+    dim = min(theta.shape[1], global_theta.shape[0])
+    if dim == 0:
+        return np.nan
+
+    diff = theta[:, :dim] - global_theta[:dim]
+    return float(np.mean(np.linalg.norm(diff, axis=1)))
+
+
+@general_metric(name="rollingGlobalDisagreement", output="scalar")
+def rollingGlobalDisagreement_metric(*, manager, i, **_):
+    try:
+        return float(np.mean(manager._errors["tvGlobalDisagreementsingle"][: i + 1]))
     except Exception:
         return np.nan

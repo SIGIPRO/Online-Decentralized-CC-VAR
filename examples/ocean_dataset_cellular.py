@@ -98,10 +98,14 @@ def main(cfg: DictConfig):
             # import pdb; pdb.set_trace()
 
         prediction_by_cluster = dict()
+        has_fresh_neighbor_params = dict()
         for cluster_head in agent_list:
-            agent_list[cluster_head].receive_params()
+            has_fresh_neighbor_params[cluster_head] = agent_list[cluster_head].receive_params()
+        for cluster_head in agent_list:
+            if has_fresh_neighbor_params[cluster_head]:
+                agent_list[cluster_head].do_consensus()
+        for cluster_head in agent_list:
             prediction_by_cluster[cluster_head] = agent_list[cluster_head].estimate(input_data=None, steps=1)
-            # agent_list[cluster_head].do_consensus()
         pending_prediction_by_cluster = prediction_by_cluster
 
     for dim in cc_data:

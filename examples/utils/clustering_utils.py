@@ -11,6 +11,10 @@ def create_cluster_agents(cfg, cc_data, clusters):
     T = None
     agent_list = {}
     cluster_out_global_idx = {}
+    degree_by_cluster = {
+        cluster_id: len(neighbors)
+        for cluster_id, neighbors in clusters.agent_graph.items()
+    }
 
     for cluster_head in clusters.clustered_complexes:
         processed_data = {}
@@ -68,11 +72,21 @@ def create_cluster_agents(cfg, cc_data, clusters):
             global_idx=global_idx,
         )
 
+        neighbors = list(clusters.agent_graph[cluster_head])
         weights = {}
-        num_connected = len(clusters.agent_graph[cluster_head]) + 1
-        weights["self"] = 1 / num_connected
-        for cluster_id in list(clusters.agent_graph[cluster_head]):
-            weights[cluster_id] = 1 / num_connected
+        row_sum = 0.0
+        for cluster_id in neighbors:
+            mh_weight = 1.0 / (
+                1.0
+                + max(
+                    degree_by_cluster.get(cluster_head, 0),
+                    degree_by_cluster.get(cluster_id, 0),
+                )
+            )
+            weights[cluster_id] = mh_weight
+            row_sum += mh_weight
+        # MH self-weight closes the row to 1 for a row-stochastic matrix.
+        weights["self"] = 1.0 - row_sum
 
         mixing = instantiate(cfg.mixing, weights=weights)
         imputer = instantiate(cfg.imputer)

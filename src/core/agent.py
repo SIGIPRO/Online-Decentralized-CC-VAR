@@ -61,12 +61,15 @@ class BaseAgent:
     def receive_params(self):
         ## Reset the parameters and auxilary variables
         self._reset_neighbor_params()
+        any_received = False
      
         for cluster_id in self._neighbor_clusters:
             p = self._protocol.receive_params(cluster_id)
             if p is not None:
                 self._neighbor_params[cluster_id] = p['params']
                 self._neighbor_aux[cluster_id] = p['aux']
+                any_received = True
+        return any_received
             
     def _reset_neighbor_params(self):
         self._neighbor_params = {}
