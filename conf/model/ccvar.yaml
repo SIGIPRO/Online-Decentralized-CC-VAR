@@ -19,5 +19,6 @@ algorithmParam:
   - true
   - true
   - true
-  FeatureNormalzn: true
+  LassoEn: false
+  FeatureNormalzn: false
   BiasEn: true

@@ -7,7 +7,14 @@ from src.core import BaseAgent
 from examples.utils.data_utils import build_partial_indices
 
 
-def create_cluster_agents(cfg, cc_data, clusters):
+def create_cluster_agents(
+    cfg,
+    cc_data,
+    clusters,
+    force_in_equals_out=False,
+    protocol_overrides=None,
+    disable_neighbors=False,
+):
     T = None
     agent_list = {}
     cluster_out_global_idx = {}
@@ -42,17 +49,26 @@ def create_cluster_agents(cfg, cc_data, clusters):
             elif cluster_head == head_tuple[1]:
                 Nex[head_tuple[0]] = clusters.Nout[head_tuple]
 
-        protocol = instantiate(cfg.protocol)
+        protocol_cfg = deepcopy(cfg.protocol)
+        if protocol_overrides:
+            for key, value in protocol_overrides.items():
+                protocol_cfg[key] = value
+        protocol = instantiate(protocol_cfg)
 
         model_cfg = deepcopy(cfg.model)
         in_idx, out_idx = build_partial_indices(
             global_idx=global_idx,
             nin_for_cluster=clusters.Nin[cluster_head],
         )
+        source_out_positions = deepcopy(out_idx)
+        if force_in_equals_out:
+            in_idx = deepcopy(source_out_positions)
+            out_idx = {dim: list(range(len(source_out_positions[dim]))) for dim in source_out_positions}
         cluster_out_global_idx[cluster_head] = {}
         for dim in global_idx:
+            map_positions = source_out_positions[dim] if force_in_equals_out else out_idx[dim]
             cluster_out_global_idx[cluster_head][dim] = np.asarray(
-                [global_idx[dim][i] for i in out_idx[dim]],
+                [global_idx[dim][i] for i in map_positions],
                 dtype=int,
             )
 
@@ -72,7 +88,7 @@ def create_cluster_agents(cfg, cc_data, clusters):
             global_idx=global_idx,
         )
 
-        neighbors = list(clusters.agent_graph[cluster_head])
+        neighbors = [] if disable_neighbors else list(clusters.agent_graph[cluster_head])
         weights = {}
         row_sum = 0.0
         for cluster_id in neighbors:
@@ -98,7 +114,7 @@ def create_cluster_agents(cfg, cc_data, clusters):
             protocol=protocol,
             mix=mixing,
             imputer=imputer,
-            neighbors=clusters.agent_graph[cluster_head],
+            neighbors=set(neighbors),
             cellularComplex=clusters.clustered_complexes[cluster_head],
         )
         agent_list[cluster_head] = currAgent

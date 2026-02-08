@@ -44,11 +44,15 @@ class CCVARPartial(CCVAR):
             eta = self._compute_step_size(key)
             self._apply_descent_step(key, eta)
 
-             # NEW (MATLAB Equivalent):
+            # NEW (MATLAB Equivalent):
             old_data = self._data[key][:, 1:]
             
-            # current_step_pred[k] is flat (N,), make it (N, 1)
+            # Keep internal buffer aligned with the model's input-indexed local view.
             new_col = inputData[key].reshape(-1, 1)
+            if new_col.shape[0] != old_data.shape[0]:
+                in_idx = self._in_idx.get(key, [])
+                if in_idx:
+                    new_col = new_col[np.asarray(in_idx, dtype=int), :]
             
             self._data[key] = np.hstack([old_data, new_col])
     def forecast(self, steps = 1):
@@ -229,8 +233,12 @@ class CCVARPartialModel(BaseModel):
             # NEW (MATLAB Equivalent):
             old_data = self._algorithm._data[key][:, 1:]
             
-            # current_step_pred[k] is flat (N,), make it (N, 1)
+            # Keep internal buffer aligned with the model's input-indexed local view.
             new_col = inputData[key].reshape(-1, 1)
+            if new_col.shape[0] != old_data.shape[0]:
+                in_idx = self._algorithm._in_idx.get(key, [])
+                if in_idx:
+                    new_col = new_col[np.asarray(in_idx, dtype=int), :]
             
             self._algorithm._data[key] = np.hstack([old_data, new_col])
 
@@ -239,8 +247,24 @@ class CCVARPartialModel(BaseModel):
     
 
     def update_params(self, update_term):
-        super().update_params(update_term=update_term)
-        self.set_params(new_params = self._params)
+        # super().update_params(update_term=update_term)
+        if len(update_term.shape) == 1:
+                
+                update_term = np.reshape(update_term, shape = (update_term.shape[0], 1))
+        new_param = np.zeros_like(update_term)
+        for key in self._algorithm._data_keys:
+            param_slice = self._param_slices[key]
+            new_param[param_slice] = self._params[param_slice] + self._eta[key] * update_term[param_slice]
+
+            # if len(update_term.shape) == 1:
+                    
+            #         update_term = np.reshape(update_term, shape = (update_term.shape[0], 1))
+
+            # try:
+            #     self._params += update_term
+            # except:
+            #     import pdb; pdb.set_trace()
+        self.set_params(new_params = new_param)
 
 
     
@@ -316,8 +340,24 @@ class CCVARModel(BaseModel):
         return grad
     
     def update_params(self, update_term):
-        super().update_params(update_term=update_term)
-        self.set_params(new_params = self._params)
+        # super().update_params(update_term=update_term)
+        if len(update_term.shape) == 1:
+                
+                update_term = np.reshape(update_term, shape = (update_term.shape[0], 1))
+        new_param = np.zeros_like(update_term)
+        for key in self._algorithm._data_keys:
+            param_slice = self._param_slices[key]
+            new_param[param_slice] = self._params[param_slice] + self._eta[key] * update_term[param_slice]
+
+            # if len(update_term.shape) == 1:
+                    
+            #         update_term = np.reshape(update_term, shape = (update_term.shape[0], 1))
+
+            # try:
+            #     self._params += update_term
+            # except:
+            #     import pdb; pdb.set_trace()
+        self.set_params(new_params = new_param)
 
 
     

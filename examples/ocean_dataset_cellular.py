@@ -17,7 +17,7 @@ from examples.utils.clustering_utils import create_cluster_agents
 """ NOTE: 
 1. The divergence can be arising from not normalizing the features as in the CC-VAR paper. This is done already. Did not work.
  a. More severe error in implementation it seems. 
-i. Taking the c very small, like 5e-6, solved the divergence issue but one should look at the implementation also. Partial solution +-.
+i. Taking the c very small, like 5e-6, solved the divergence issue but one should look at the implementation also. Partial solution ++.
 
 2. KGTMixing is also causing divergence. Hyperparameters should be optimized.
 """
@@ -28,8 +28,8 @@ i. Taking the c very small, like 5e-6, solved the divergence issue but one shoul
 3. CC-VAR is wrongly used. The problem is that it takes all of the elements of the agent which should not be the case. Implemented. Look at get_gradient method of the CCVARPartial to make it complete. Also add CCVARPartialModel for completeness. ++
 4. LabelPropagator was also implemented. ++
 5. Metric manager is not implemented yet. ++ (Codex implementation)
-6. Look at the dynamic regret alongside of MSE. --
-7. Check the error when KGTMixing is applied. --
+6. Look at the dynamic regret alongside of MSE. ++
+7. Check the error when KGTMixing is applied. ++
 """
 
 @hydra.main(version_base=None, config_path='../conf', config_name='config.yaml')

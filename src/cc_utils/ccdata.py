@@ -158,7 +158,8 @@ class CCIMPartialData(CellularComplexInMemoryData):
                 local_idx = [self._global_idx[key].index(ogidx) for ogidx in outgoing_data['ogidx'][key]]
                 outgoing_data['odata'][key] = self._current_data[key][np.array(local_idx)]
             except: 
-                import pdb; pdb.set_trace()
+                # import pdb; pdb.set_trace()
+                pass
             
         outgoing_data['igidx'] = dict()
         outgoing_data['idata'] = dict()
@@ -168,7 +169,8 @@ class CCIMPartialData(CellularComplexInMemoryData):
             try:
                 outgoing_data['idata'][key] = self._curr_interface_data[target][key]
             except:
-                import pdb; pdb.set_trace()
+                # import pdb; pdb.set_trace()
+                pass
 
         return outgoing_data
 

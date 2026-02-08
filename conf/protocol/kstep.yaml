@@ -1,3 +1,3 @@
 _target_: src.implementations.protocols.kstep.KStepProtocol
-C_data: 1
-C_param: 1
+C_data: 10
+C_param: 5

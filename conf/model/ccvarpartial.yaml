@@ -19,7 +19,8 @@ algorithmParam:
   - true
   - true
   - true
-  FeatureNormalzn: true
+  FeatureNormalzn: false
   BiasEn: true
+  LassoEn: false
   in_idx: {}
   out_idx: {}

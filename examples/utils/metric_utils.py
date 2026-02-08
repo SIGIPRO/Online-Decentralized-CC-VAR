@@ -302,3 +302,95 @@ def rollingGlobalDisagreement_metric(*, manager, i, **_):
         return float(np.mean(manager._errors["tvGlobalDisagreementsingle"][: i + 1]))
     except Exception:
         return np.nan
+
+
+@general_metric(name="tvSelfRMS", output="scalar")
+def tvSelfRMS_metric(*, prediction, **_):
+    theta = _extract_param_matrix(prediction)
+    if theta.size == 0 or theta.shape[0] <= 1:
+        return 0.0
+    centered = theta - np.mean(theta, axis=0, keepdims=True)
+    sq_norms = np.sum(centered ** 2, axis=1)
+    return float(np.sqrt(np.mean(sq_norms)))
+
+
+@general_metric(name="rollingSelfRMS", output="scalar")
+def rollingSelfRMS_metric(*, manager, i, **_):
+    try:
+        return float(np.mean(manager._errors["tvSelfRMSsingle"][: i + 1]))
+    except Exception:
+        return np.nan
+
+
+@general_metric(name="tvCentroidToGlobal", output="scalar")
+def tvCentroidToGlobal_metric(*, prediction, groundTruth, **_):
+    theta = _extract_param_matrix(prediction)
+    if theta.size == 0:
+        return np.nan
+
+    global_theta = _extract_global_vector(groundTruth)
+    if global_theta.size == 0:
+        return np.nan
+
+    dim = min(theta.shape[1], global_theta.shape[0])
+    if dim == 0:
+        return np.nan
+
+    theta_bar = np.mean(theta[:, :dim], axis=0)
+    return float(np.linalg.norm(theta_bar - global_theta[:dim]))
+
+
+@general_metric(name="rollingCentroidToGlobal", output="scalar")
+def rollingCentroidToGlobal_metric(*, manager, i, **_):
+    try:
+        return float(np.mean(manager._errors["tvCentroidToGlobalsingle"][: i + 1]))
+    except Exception:
+        return np.nan
+
+
+@general_metric(name="tvGlobalRMS", output="scalar")
+def tvGlobalRMS_metric(*, prediction, groundTruth, **_):
+    theta = _extract_param_matrix(prediction)
+    if theta.size == 0:
+        return np.nan
+
+    global_theta = _extract_global_vector(groundTruth)
+    if global_theta.size == 0:
+        return np.nan
+
+    dim = min(theta.shape[1], global_theta.shape[0])
+    if dim == 0:
+        return np.nan
+
+    diff = theta[:, :dim] - global_theta[:dim]
+    sq_norms = np.sum(diff ** 2, axis=1)
+    return float(np.sqrt(np.mean(sq_norms)))
+
+
+@general_metric(name="rollingGlobalRMS", output="scalar")
+def rollingGlobalRMS_metric(*, manager, i, **_):
+    try:
+        return float(np.mean(manager._errors["tvGlobalRMSsingle"][: i + 1]))
+    except Exception:
+        return np.nan
+
+
+@general_metric(name="tvGlobalRMSRelative", output="scalar")
+def tvGlobalRMSRelative_metric(*, prediction, groundTruth, **_):
+    global_theta = _extract_global_vector(groundTruth)
+    if global_theta.size == 0:
+        return np.nan
+    denom = float(np.linalg.norm(global_theta))
+    denom = max(denom, 1e-12)
+    curr_rms = tvGlobalRMS_metric(prediction=prediction, groundTruth=groundTruth)
+    if not np.isfinite(curr_rms):
+        return np.nan
+    return float(curr_rms / denom)
+
+
+@general_metric(name="rollingGlobalRMSRelative", output="scalar")
+def rollingGlobalRMSRelative_metric(*, manager, i, **_):
+    try:
+        return float(np.mean(manager._errors["tvGlobalRMSRelativesingle"][: i + 1]))
+    except Exception:
+        return np.nan
