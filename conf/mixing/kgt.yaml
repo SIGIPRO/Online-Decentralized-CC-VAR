@@ -2,7 +2,7 @@ _target_: src.implementations.mixing.kgt.KGTMixingModel
 _convert_: all
 eta: 
   K: 1
-  c: 5e-6
+  c: 5e-5
   s: 1
 initial_aux_vars:
   correction: 0

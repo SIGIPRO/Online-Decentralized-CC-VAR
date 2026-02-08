@@ -90,12 +90,12 @@ class BaseAgent:
 
     def local_step(self):
         local_grad = self._model.get_gradient(aggregated_data = self._data)
-        if self._cluster_id == 0 and self._t == 360:
-            import pdb; pdb.set_trace()
+        # if self._cluster_id == 0 and self._t == 360:
+        #     import pdb; pdb.set_trace()
         update_term = self._mixing_model.apply_correction(local_gradient = local_grad)
 
         # import pdb; pdb.set_trace()
-        self._model.update_params(update_term = update_term)
+        self._model.update_params(update_term = -update_term)
 
     def estimate(self, **kwargs):
         return self._model.estimate(**kwargs)

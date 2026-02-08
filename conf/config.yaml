@@ -2,8 +2,8 @@ defaults:
   - dataset: ocean_cellular_dataset
   - ccdata: partial
   - experiment: base
-  - imputer: zeropadder
-  - model: ccvar
+  - imputer: dataholder
+  - model: ccvarpartial
   - mixing: kgt
   - protocol: kstep
   - clustering: modularity

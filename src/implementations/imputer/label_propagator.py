@@ -18,13 +18,14 @@ class LabelPropagator(BaseImputer):
         
         try: self._dimensions
         except: 
-            self._dimensions = list(metadata.keys())
+            self._dimensions = set(metadata.keys()) | {0}
             self._inv_lap = dict()
 
             for dim in self._dimensions:
                 
-                B_l = metadata.get(dim - 1, 0)
-                B_u = metadata.get(dim, 0)
+                B_l = metadata.get(dim - 1, np.array([0]))
+                B_u = metadata.get(dim, np.array([0]))
+                
 
                 self._inv_lap[dim] = B_u @ B_u.T + B_l.T @ B_l
 
@@ -72,8 +73,11 @@ class LabelPropagator(BaseImputer):
                    y[dim][dataIdx] = self._state[cluster_id]['igidx'][dim][i]
 
                    i+= 1
-        
-        x = self._inv_lap @ y
+        x = dict()
+
+        for dim in y:
+             x[dim] = self._inv_lap[dim]@y[dim]
+        # x = self._inv_lap @ y
         propagate_map = dict()
 
         ## Fill propagate_map
@@ -89,7 +93,7 @@ class LabelPropagator(BaseImputer):
                
                local_idx = [current_data._global_idx[dim].index(ogidx) for ogidx in propagate_map['ogidx'][dim]]
 
-               propagate_map['odata'][dim] = x[np.array(local_idx)]
+               propagate_map['odata'][dim] = x[dim][np.array(local_idx)]
 
            if 'igidx' not in self._state[cluster_id]:
                     continue
@@ -99,7 +103,7 @@ class LabelPropagator(BaseImputer):
            for dim in self._state[cluster_id]['igidx']:
                local_idx = [current_data._global_idx[dim].index(ogidx) for ogidx in propagate_map['igidx'][dim]]
 
-               propagate_map['idata'][dim] = x[np.array(local_idx)]
+               propagate_map['idata'][dim] = x[dim][np.array(local_idx)]
 
 
             ##Fill state with the incoming data map if applicable

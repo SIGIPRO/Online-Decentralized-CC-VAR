@@ -10,6 +10,7 @@ from cellexp_util.registry.metric_registry import ensure_metrics_registered
 from tqdm import tqdm # type: ignore[import-untyped]
 import matplotlib.pyplot as plt
 import pickle
+from copy import deepcopy
 
 
 def aggregate_to_global_vector(per_cluster_data, global_to_local_idx, dim, total_size):
@@ -50,6 +51,24 @@ def keep_only_metrics(mm, keep):
             if meta.get("single", True):
                 mm._errors[k + "single"] = []
     mm.reset_rolling()
+
+
+def build_partial_indices(global_idx, nin_for_cluster):
+    in_idx = {}
+    out_idx = {}
+
+    for dim, gidx_list in global_idx.items():
+        local_all = list(range(len(gidx_list)))
+        in_idx[dim] = local_all
+
+        owned_global = set(nin_for_cluster.get(dim, []))
+        local_owned = [i for i, g in enumerate(gidx_list) if g in owned_global]
+
+        # Fallback: if a dimension has no owned cells after clustering/interface split,
+        # keep local cells so model dimensions remain valid.
+        out_idx[dim] = local_owned if local_owned else local_all
+
+    return in_idx, out_idx
 
 
 def save_metric_plots(metrics, output_dirs):
@@ -120,20 +139,40 @@ def append_same_dim(prediction, groundTruth, dim=None):
 
     return y, gt
 
+def _resolve_eval_arrays(prediction, groundTruth, dim=None):
+    y, gt = append_same_dim(prediction, groundTruth, dim)
+    mask = np.ones_like(gt, dtype=bool)
+    if dim is None and isinstance(groundTruth, dict):
+        incoming_mask = groundTruth.get("mask", None)
+        if incoming_mask is not None:
+            mask = np.asarray(incoming_mask, dtype=bool).reshape(-1)
+            if mask.shape != gt.shape:
+                mask = np.ones_like(gt, dtype=bool)
+    return y, gt, mask
+
 @general_metric(name="tvNMSE", output="scalar")
 def tvNMSE_distributed_metric(*, prediction, groundTruth, dim=None, **_):
-    y, gt = append_same_dim(prediction, groundTruth, dim)
-    return ((y - gt) ** 2).mean() / (gt ** 2).mean()
+    y, gt, mask = _resolve_eval_arrays(prediction, groundTruth, dim)
+    if not np.any(mask):
+        return np.nan
+    y = y[mask]
+    gt = gt[mask]
+    denom = (gt ** 2).mean()
+    if denom == 0:
+        return np.nan
+    return ((y - gt) ** 2).mean() / denom
 
 @general_metric(name="tvMAE", output="scalar")
 def tvMAE_distributed_metric(*, prediction, groundTruth, dim=None, **_):
-    y, gt = append_same_dim(prediction, groundTruth, dim)
-    return np.abs(y - gt).mean()
+    y, gt, mask = _resolve_eval_arrays(prediction, groundTruth, dim)
+    if not np.any(mask):
+        return np.nan
+    return np.abs(y[mask] - gt[mask]).mean()
 
 @general_metric(name="tvMAPE", output="scalar")
 def tvMAPE_distributed_metric(*, prediction, groundTruth, dim=None, **_):
-    y, gt = append_same_dim(prediction, groundTruth, dim)
-    m = gt != 0
+    y, gt, mask = _resolve_eval_arrays(prediction, groundTruth, dim)
+    m = mask & (gt != 0)
     return (np.abs((y[m] - gt[m]) / gt[m]).mean() * 100) if m.any() else np.nan
 
 # stateful rolling NMSE – just use manager from kwargs
@@ -141,14 +180,23 @@ def tvMAPE_distributed_metric(*, prediction, groundTruth, dim=None, **_):
 def rollingNMSE_distributed_metric(*, prediction, groundTruth, manager, dim=None, **_):
     # y = groundTruth["s"]; yhat = prediction
 
-    y, gt = append_same_dim(prediction, groundTruth, dim)
+    y, gt, mask = _resolve_eval_arrays(prediction, groundTruth, dim)
+    if not np.any(mask):
+        return np.nan
     
-    manager._cumulative_energy += gt ** 2
-    manager._nmse_n += (y - gt) ** 2
+    cumulative_energy = np.zeros_like(gt, dtype=float)
+    nmse_n = np.zeros_like(gt, dtype=float)
+    cumulative_energy[mask] = gt[mask] ** 2
+    nmse_n[mask] = (y[mask] - gt[mask]) ** 2
+    manager._cumulative_energy += cumulative_energy
+    manager._nmse_n += nmse_n
+
+    valid = manager._cumulative_energy != 0
+    if not np.any(valid):
+        return np.nan
     with np.errstate(divide="ignore", invalid="ignore"):
-        nmse_n = np.where(manager._cumulative_energy != 0,
-                          manager._nmse_n / manager._cumulative_energy, 0.0)
-    return float(nmse_n.mean())
+        nmse_n = np.where(valid, manager._nmse_n / manager._cumulative_energy, 0.0)
+    return float(nmse_n[valid].mean())
 
 # stateful rolling MAE – just use manager from kwargs
 @general_metric(name="rollingMAE", output="scalar")
@@ -244,6 +292,7 @@ def main(cfg: DictConfig):
 
     T = None
     agent_list = dict()
+    cluster_out_global_idx = dict()
 
     for cluster_head in clusters.clustered_complexes:
 
@@ -290,7 +339,20 @@ def main(cfg: DictConfig):
   
         protocol = instantiate(cfg.protocol)
         
-        ccvarmodel = instantiate(cfg.model, cellularComplex = clusters.clustered_complexes[cluster_head]) ## Check the usage of clusters 
+        model_cfg = deepcopy(cfg.model)
+        in_idx, out_idx = build_partial_indices(
+            global_idx=global_idx,
+            nin_for_cluster=clusters.Nin[cluster_head],
+        )
+        cluster_out_global_idx[cluster_head] = dict()
+        for dim in global_idx:
+            cluster_out_global_idx[cluster_head][dim] = np.asarray(
+                [global_idx[dim][i] for i in out_idx[dim]],
+                dtype=int,
+            )
+        model_cfg.algorithmParam.in_idx = in_idx
+        model_cfg.algorithmParam.out_idx = out_idx
+        ccvarmodel = instantiate(model_cfg, cellularComplex = clusters.clustered_complexes[cluster_head]) ## Check the usage of clusters 
         ccdata = instantiate(cfg.ccdata,
                               data = processed_data,
                               interface = interface,
@@ -341,6 +403,41 @@ def main(cfg: DictConfig):
                           keep = ["tvNMSE", "tvMAE", "tvMAPE", "rollingNMSE", "rollingMAE", "rollingMAPE"])
 
     pending_prediction_by_cluster = None
+
+    def aggregate_partial_prediction_to_global(prediction_by_cluster, dim):
+        dim_size = cc_data[dim].shape[0]
+        pred_sum = np.zeros(dim_size, dtype=float)
+        pred_count = np.zeros(dim_size, dtype=float)
+
+        for cluster_head, dim_prediction in prediction_by_cluster.items():
+            if dim not in dim_prediction:
+                continue
+
+            pred_values = np.asarray(dim_prediction[dim]).reshape(-1)
+            out_global_idx = np.asarray(
+                cluster_out_global_idx.get(cluster_head, {}).get(dim, np.array([], dtype=int)),
+                dtype=int,
+            )
+            if pred_values.size == 0 or out_global_idx.size == 0:
+                continue
+            if pred_values.size != out_global_idx.size:
+                min_len = min(pred_values.size, out_global_idx.size)
+                pred_values = pred_values[:min_len]
+                out_global_idx = out_global_idx[:min_len]
+
+            pred_sum[out_global_idx] += pred_values
+            pred_count[out_global_idx] += 1.0
+
+        pred_vec = np.zeros(dim_size, dtype=float)
+        valid_mask = pred_count > 0
+        pred_vec[valid_mask] = pred_sum[valid_mask] / pred_count[valid_mask]
+        return pred_vec, valid_mask
+
+    def build_ground_truth_vector_for_partial(dim, t_curr, valid_mask):
+        gt_vec = np.zeros(cc_data[dim].shape[0], dtype=float)
+        gt_vec[valid_mask] = cc_data[dim][valid_mask, t_curr]
+        return gt_vec
+
     progress_bar = tqdm(range(0, T))
     for t in progress_bar:
 
@@ -363,23 +460,19 @@ def main(cfg: DictConfig):
             postfix = {}
             eval_i = t - 1
             for dim in sorted(cc_data.keys()):
-                dim_size = cc_data[dim].shape[0]
-                pred_vec = aggregate_to_global_vector(
-                    per_cluster_data=pending_prediction_by_cluster,
-                    global_to_local_idx=clusters.global_to_local_idx,
+                pred_vec, valid_mask = aggregate_partial_prediction_to_global(
+                    prediction_by_cluster=pending_prediction_by_cluster,
                     dim=dim,
-                    total_size=dim_size,
                 )
-                gt_vec = aggregate_to_global_vector(
-                    per_cluster_data=ground_truth_by_cluster,
-                    global_to_local_idx=clusters.global_to_local_idx,
+                gt_vec = build_ground_truth_vector_for_partial(
                     dim=dim,
-                    total_size=dim_size,
+                    t_curr=t,
+                    valid_mask=valid_mask,
                 )
                 metrics[dim].step_calculation(
                     i=eval_i,
                     prediction=pred_vec,
-                    groundTruth={"s": gt_vec},
+                    groundTruth={"s": gt_vec, "mask": valid_mask},
                     verbose=False,
                 )
                 postfix[f"NMSE{dim}"] = f"{metrics[dim]._errors['tvNMSE'][eval_i]:.3e}"

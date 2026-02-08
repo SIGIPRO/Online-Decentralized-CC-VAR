@@ -5,12 +5,13 @@ import numpy as np
 
 class CCVARPartial(CCVAR):
     def __init__(self, algorithmParam, cellularComplex, theta_initializer = None):
-        self.__algorithm_parameter_setup(algorithmParam=algorithmParam)
+        self._algorithm_parameter_setup(algorithmParam=algorithmParam)
         self._data_keys = sorted([i for i, en in enumerate(self._data_enabler) if en])
 
         self._phi = dict()
         self._r = dict()
         self._theta = dict()
+        # import pdb; pdb.set_trace()
         
         # 1. Generic Topology Construction
         self._construct_laplacian(cellularComplex)
@@ -20,7 +21,7 @@ class CCVARPartial(CCVAR):
 
         # 3. Weights
         if theta_initializer is None:
-            self._theta_initializer = self.__zero_initializer
+            self._theta_initializer = self._CCVAR__zero_initializer
         else:
             self._theta_initializer = theta_initializer
 
@@ -55,7 +56,7 @@ class CCVARPartial(CCVAR):
         1-step forecasting. Definition of multi-step forecasting in this case a little bit problematic.
         """
 
-        preds = {k: np.zeros((self._N[k], steps)) for k in self._data_keys}
+        preds = {k: np.zeros((self._Nout[k], steps)) for k in self._data_keys}
         feats = self._feature_gen()
         for k in self._data_keys:
             if self._theta[k] is None: continue
@@ -93,9 +94,13 @@ class CCVARPartial(CCVAR):
 
 
             B_down = cellularComplex.get(k)
-            B_down = B_down[self._in_idx.get(k - 1), self._in_idx.get(k)]
+            if B_down is not None:
+                B_down = B_down[np.ix_(self._in_idx.get(k - 1), self._in_idx.get(k))]
+
             B_up = cellularComplex.get(k + 1)
-            B_up = B_up[self._in_idx.get(k), self._in_idx.get(k + 1)]
+            if B_up is not None:
+                B_up = B_up[np.ix_(self._in_idx.get(k), self._in_idx.get(k + 1))]
+            
 
             L_lower = None
             L_upper = None
@@ -111,10 +116,10 @@ class CCVARPartial(CCVAR):
                 # Add regularization for L_lower/L_upper
             if L_lower is not None:
                  mu_l = mu_val[0] if isinstance(mu_val, (list, tuple)) else mu_val
-                 self._Rk[k] += mu_l * L_lower[self._out_idx.get(k), self._out_idx.get(k)]
+                 self._Rk[k] += mu_l * L_lower[np.ix_(self._out_idx.get(k), self._out_idx.get(k))]
             if L_upper is not None:
                  mu_u = mu_val[1] if isinstance(mu_val, (list, tuple)) else mu_val
-                 self._Rk[k] += mu_u * L_upper[self._out_idx.get(k), self._out_idx.get(k)]
+                 self._Rk[k] += mu_u * L_upper[np.ix_(self._out_idx.get(k), self._out_idx.get(k))]
 
             # --- Feature Dimension accumulation matches Order in __generic_features ---
             # 1. Lower Neighbor
@@ -122,11 +127,11 @@ class CCVARPartial(CCVAR):
                 K_val = self._K[k] if k < len(self._K) else 2
                 K_l = K_val[0] if isinstance(K_val, (list, tuple)) else K_val
                 
-                self._features[k]["sl"] = self.__ll_gen(L_lower, K_l)
+                self._features[k]["sl"] = self._CCVAR__ll_gen(L_lower, K_l)
                 
                 # Check for Lower Neighbor existence
                 if (k-1) in self._data_keys:
-                    self._features[k]["l"] = self.__multiply_matrices_blockwise(self._features[k]["sl"], B_down.T)
+                    self._features[k]["l"] = self._CCVAR__multiply_matrices_blockwise(self._features[k]["sl"], B_down.T)
                     self._features[k]["l"] = self._features[k]["l"][self._out_idx.get(k),:,:]
                     feature_dim_accum += K_l * self._P
 
@@ -142,13 +147,13 @@ class CCVARPartial(CCVAR):
                 K_val = self._K[k] if k < len(self._K) else 2
                 K_u = K_val[1] if isinstance(K_val, (list, tuple)) else K_val
                 
-                self._features[k]["su"] = self.__ll_gen(L_upper, K_u)
+                self._features[k]["su"] = self._CCVAR__ll_gen(L_upper, K_u)
                 feature_dim_accum += K_u * self._P
             
             # 4. Upper Neighbor
             if L_upper is not None:
                 if (k+1) in self._data_keys:
-                    self._features[k]["u"] = self.__multiply_matrices_blockwise(self._features[k]["su"], B_up)
+                    self._features[k]["u"] = self._CCVAR__multiply_matrices_blockwise(self._features[k]["su"], B_up)
                     self._features[k]["u"] = self._features[k]["u"][self._out_idx.get(k),:,:]
                     feature_dim_accum += K_u * self._P
 
@@ -163,8 +168,19 @@ class CCVARPartial(CCVAR):
 
 
 
-    def __algorithm_parameter_setup(self, algorithmParam):
-        super().__algorithm_parameter_setup(algorithmParam)
+    def _algorithm_parameter_setup(self, algorithmParam):
+        self._Tstep = algorithmParam.get('Tstep', 1)
+        self._mu = algorithmParam.get('mu', [0, (0,0), 0]) 
+        self._lambda = algorithmParam.get('lambda', 0.01)
+        self._LassoEn = algorithmParam.get('LassoEn', 0)
+        self._FeatureNormalzn = algorithmParam.get('FeatureNormalzn', True)
+        self._bias_enabler = algorithmParam.get('BiasEn', True)
+        self._b = algorithmParam.get('b', 1)
+        self._gamma = algorithmParam.get('gamma', 0.98)
+        self._P = algorithmParam.get('P', 2)
+        self._K = algorithmParam.get('K', [2, (2,2), 2]) 
+        self._data_enabler = algorithmParam.get('enabler', [True, True, True])
+        # super(CCVARPartial, self).__algorithm_parameter_setup(algorithmParam=algorithmParam)
         self._in_idx = algorithmParam['in_idx']
         self._out_idx = algorithmParam['out_idx']
         
@@ -194,6 +210,7 @@ class CCVARPartialModel(BaseModel):
             
             S = featureDict[key]
             target = inputData[key].reshape(-1,1)
+            target = target[self._algorithm._out_idx[key], :]
 
             self._algorithm._update_state(key, S, target)
             self._eta[key] = self._algorithm._compute_step_size(key)

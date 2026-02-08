@@ -1,0 +1,25 @@
+_target_: src.implementations.models.ccvar.CCVARPartialModel
+_convert_: partial
+algorithmParam:
+  Tstep: 1
+  P: 2
+  K:
+  - 2
+  - - 2
+    - 2
+  - 2
+  mu:
+  - 0
+  - - 0
+    - 0
+  - 0
+  lambda: 0.01
+  gamma: 0.98
+  enabler:
+  - true
+  - true
+  - true
+  FeatureNormalzn: true
+  BiasEn: true
+  in_idx: {}
+  out_idx: {}
