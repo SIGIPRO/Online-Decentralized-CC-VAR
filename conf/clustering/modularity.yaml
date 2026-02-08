@@ -5,4 +5,4 @@ clusteringParameters:
   best_n: 7
   resolution: 1.5
   dim: 1
-  Q-hop: 2
+  Q-hop: 1

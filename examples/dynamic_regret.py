@@ -84,16 +84,44 @@ def _flatten_theta_dict(theta_dict):
     return np.concatenate(chunks) if chunks else np.array([], dtype=float)
 
 
+def _to_plain_config(value):
+    if OmegaConf.is_config(value):
+        return OmegaConf.to_container(value, resolve=True)
+    return value
+
+
+def _format_k_for_suffix(k_value):
+    plain = _to_plain_config(k_value)
+    if isinstance(plain, list):
+        parts = []
+        for item in plain:
+            if isinstance(item, list):
+                parts.append("-".join(str(x) for x in item))
+            else:
+                parts.append(str(item))
+        return "k_" + "_".join(parts).replace(" ", "")
+    return f"k_{str(plain).replace(' ', '')}"
+
+
+def _format_k_for_display(k_value):
+    plain = _to_plain_config(k_value)
+    return str(plain).replace(" ", "")
+
+
 def _get_run_parameters(cfg):
     c_data = cfg.protocol.get("C_data", "NA")
     c_param = cfg.protocol.get("C_param", "NA")
     mixing_eta = cfg.mixing.get("eta", {})
     c_val = mixing_eta.get("c", "NA")
-    return c_data, c_param, c_val
+    clustering_params = cfg.clustering.get("clusteringParameters", {})
+    q_hop = clustering_params.get("Q-hop", "NA")
+    model_algorithm = cfg.model.get("algorithmParam", {})
+    k_value = model_algorithm.get("K", "NA")
+    return c_data, c_param, c_val, q_hop, _format_k_for_display(k_value), _format_k_for_suffix(k_value)
 
 
-def _parameter_suffix(c_data, c_param, c_val):
-    return f"c_data_{c_data}_c_param_{c_param}_c_{c_val}"
+def _parameter_suffix(c_data, c_param, c_val, q_hop, k_suffix):
+    return f"c_data_{c_data}_c_param_{c_param}_c_{c_val}_q_hop_{q_hop}_{k_suffix}"
 
 
 def _mean_last_fraction(values, fraction=0.1):
@@ -109,8 +137,8 @@ def _mean_last_fraction(values, fraction=0.1):
 
 
 def _save_last10pct_tables(output_root: Path, case_metric_managers, cfg):
-    c_data, c_param, c_val = _get_run_parameters(cfg)
-    suffix = _parameter_suffix(c_data, c_param, c_val)
+    c_data, c_param, c_val, q_hop, k_display, k_suffix = _get_run_parameters(cfg)
+    suffix = _parameter_suffix(c_data, c_param, c_val, q_hop, k_suffix)
     table_dir = output_root / "comparison_tables"
     table_dir.mkdir(parents=True, exist_ok=True)
 
@@ -126,7 +154,7 @@ def _save_last10pct_tables(output_root: Path, case_metric_managers, cfg):
     md_lines = [
         f"# Disagreement (Last 10%)",
         f"",
-        f"Parameters: `C_data={c_data}`, `C_param={c_param}`, `c={c_val}`",
+        f"Parameters: `C_data={c_data}`, `C_param={c_param}`, `c={c_val}`, `Q-hop={q_hop}`, `K={k_display}`",
         f"",
         "| Metric | Pure Local | Parameter Only | Parameter + Dataset |",
         "|---|---:|---:|---:|",
@@ -142,7 +170,7 @@ def _save_last10pct_tables(output_root: Path, case_metric_managers, cfg):
     tex_lines = [
         "\\begin{table}[t]",
         "\\centering",
-        f"\\caption{{Last 10\\% mean of TV disagreement metrics ($C_{{data}}={c_data}$, $C_{{param}}={c_param}$, $c={c_val}$).}}",
+        f"\\caption{{Last 10\\% mean of TV disagreement metrics ($C_{{data}}={c_data}$, $C_{{param}}={c_param}$, $c={c_val}$, $Q\\text{{-}}hop={q_hop}$, $K={k_display}$).}}",
         "\\begin{tabular}{lccc}",
         "\\hline",
         "Metric & Pure Local & Parameter Only & Parameter + Dataset \\\\",
@@ -161,12 +189,12 @@ def _save_last10pct_tables(output_root: Path, case_metric_managers, cfg):
 
 
 def _save_metric_comparison_plots(output_root: Path, case_metric_managers, cfg):
-    c_data, c_param, c_val = _get_run_parameters(cfg)
-    suffix = _parameter_suffix(c_data, c_param, c_val)
+    c_data, c_param, c_val, q_hop, k_display, k_suffix = _get_run_parameters(cfg)
+    suffix = _parameter_suffix(c_data, c_param, c_val, q_hop, k_suffix)
     figure_dir = output_root / "comparison_plots"
     figure_dir.mkdir(parents=True, exist_ok=True)
 
-    annotation_text = f"C_data={c_data}, C_param={c_param}, c={c_val}"
+    annotation_text = f"C_data={c_data}, C_param={c_param}, c={c_val}, Q-hop={q_hop}, K={k_display}"
 
     for metric_name in DISAGREEMENT_METRICS:
         fig, ax = plt.subplots(figsize=(9, 5))
