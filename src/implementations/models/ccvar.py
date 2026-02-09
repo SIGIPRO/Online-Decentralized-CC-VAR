@@ -1,6 +1,7 @@
 from ccvar import CCVAR
 from src.core import BaseModel
 import numpy as np
+import copy
 
 
 class CCVARPartial(CCVAR):
@@ -26,6 +27,7 @@ class CCVARPartial(CCVAR):
             self._theta_initializer = theta_initializer
 
         self._allocate_state_variables()
+
 
     def update(self, inputData):
         featureDict = self._feature_gen()
@@ -55,16 +57,100 @@ class CCVARPartial(CCVAR):
                     new_col = new_col[np.asarray(in_idx, dtype=int), :]
             
             self._data[key] = np.hstack([old_data, new_col])
+    def _in_in_generic_features(self, key, x_self, x_lower, x_upper):
+        """
+        Constructs S = [Neighbor_Lower, Self_Lower, Self_Upper, Neighbor_Upper, Bias]
+        Order matched to MATLAB: [Lower, Self, Upper, Bias]
+        """
+        components = []
+        
+        # 1. Lower Neighbor Features (L * B_k^T * x_{k-1})
+        if x_lower is not None and "l" in self._features[key]:
+            components.append(self._CCVAR__matrix_vector_bw(self._in_in_features[key]["l"], x_lower))
+
+        # 2. Self Features (Lower Coupling)
+        if "sl" in self._features[key]:
+             components.append(self._CCVAR__matrix_vector_bw(self._in_in_features[key]["sl"], x_self))
+        
+        # 3. Self Features (Upper Coupling)
+        if "su" in self._features[key]:
+             components.append(self._CCVAR__matrix_vector_bw(self._in_in_features[key]["su"], x_self))
+        
+        # 4. Upper Neighbor Features (L * B_{k+1} * x_{k+1})
+        if x_upper is not None and "u" in self._features[key]:
+            components.append(self._CCVAR__matrix_vector_bw(self._in_in_features[key]["u"], x_upper))
+            
+        # 5. Bias
+        if self._bias_enabler:
+            # In in-in recursion, rows are Nin (not Nout), so bias must match Nin.
+            components.append(np.ones((x_self.shape[0], 1)))
+        else:
+            components.append(np.empty((x_self.shape[0], 0)))
+        
+        return np.hstack(components)
+    def _in_in_feature_gen(self):
+        """
+        Generic Feature Generation.
+        CRITICAL FIX: Normalization is Column-Wise (axis=0).
+        """
+        featureDict = dict()
+
+        for key in self._data_keys:
+            x_self = self._data[key]
+            x_lower = self._data.get(key - 1) if (key - 1) in self._data else None
+            x_upper = self._data.get(key + 1) if (key + 1) in self._data else None
+            
+            # Generate Raw Features
+            S = self._in_in_generic_features(key, x_self, x_lower, x_upper)
+
+            # Normalization
+            if self._FeatureNormalzn:
+                # 1. Compute Squared Norm per Column (Vector of size FeatDim)
+                # CRITICAL: axis=0 prevents scalar summation of the whole matrix
+                S_n = np.sum(S**2, axis=0)
+                
+                # 2. Floor to prevent division by zero (Matches MATLAB 0.001)
+                S_n[S_n == 0] = 0.001
+                
+                # 3. Compute Signal Variance (Scalar) of the most recent lag
+                varV = np.sum(x_self[:, -1]**2)
+                
+                # 4. Update Running Scale
+                self._norm_scale[key] = (1 - self._b) * self._norm_scale[key] + self._b * np.sqrt(varV)
+                
+                # 5. Broadcast Division and Scale
+                # (N, F) / (F,) -> Each column divided by its norm
+                featureDict[key] = (S / np.sqrt(S_n)) * self._norm_scale[key]
+            else:
+                featureDict[key] = S
+
+        return featureDict
+
     def forecast(self, steps = 1):
         """
         1-step forecasting. Definition of multi-step forecasting in this case a little bit problematic.
         """
+    
+        const_obj = copy.deepcopy(self)
+        preds = {k: np.zeros((const_obj._Nout[k], steps)) for k in self._data_keys}
+        
+        for s in range(steps):
+            if s == steps - 1:
+                feats = const_obj._feature_gen()
+            else:
+                feats = const_obj._in_in_feature_gen()
 
-        preds = {k: np.zeros((self._Nout[k], steps)) for k in self._data_keys}
-        feats = self._feature_gen()
-        for k in self._data_keys:
-            if self._theta[k] is None: continue
-            preds[k] = (feats[k] @ self._theta[k]).flatten()
+            for k in self._data_keys:
+                if self._theta[k] is None: continue
+                curr_preds = (feats[k] @ const_obj._theta[k]).flatten()
+                if s == steps - 1:
+                    preds[k][:,s] = curr_preds
+                else:
+                    preds[k][:,s] = curr_preds[const_obj._out_idx[k]]
+
+                    old_data = const_obj._data[k][:, 1:]
+                    new_col = curr_preds.reshape(-1,1)
+                    const_obj._data[k] = np.hstack([old_data, new_col])
 
         return preds
             
@@ -85,11 +171,13 @@ class CCVARPartial(CCVAR):
         self._Nin = dict()
         self._Nout = dict()
         self._features = dict()
+        self._in_in_features = dict()
         self._Rk = dict()
 
 
         for k in self._data_keys:
             self._features[k] = {}
+            self._in_in_features[k] = {}
             feature_dim_accum = 0
 
             self._Nin[k] = len(self._in_idx[k])
@@ -132,10 +220,12 @@ class CCVARPartial(CCVAR):
                 K_l = K_val[0] if isinstance(K_val, (list, tuple)) else K_val
                 
                 self._features[k]["sl"] = self._CCVAR__ll_gen(L_lower, K_l)
+                self._in_in_features[k]["sl"] = copy.deepcopy(self._features[k]["sl"])
                 
                 # Check for Lower Neighbor existence
                 if (k-1) in self._data_keys:
                     self._features[k]["l"] = self._CCVAR__multiply_matrices_blockwise(self._features[k]["sl"], B_down.T)
+                    self._in_in_features[k]["l"] = copy.deepcopy(self._features[k]["l"])
                     self._features[k]["l"] = self._features[k]["l"][self._out_idx.get(k),:,:]
                     feature_dim_accum += K_l * self._P
 
@@ -152,12 +242,14 @@ class CCVARPartial(CCVAR):
                 K_u = K_val[1] if isinstance(K_val, (list, tuple)) else K_val
                 
                 self._features[k]["su"] = self._CCVAR__ll_gen(L_upper, K_u)
+                self._in_in_features[k]["su"] = copy.deepcopy(self._features[k]["su"])
                 feature_dim_accum += K_u * self._P
             
             # 4. Upper Neighbor
             if L_upper is not None:
                 if (k+1) in self._data_keys:
                     self._features[k]["u"] = self._CCVAR__multiply_matrices_blockwise(self._features[k]["su"], B_up)
+                    self._in_in_features[k]["u"] = copy.deepcopy(self._features[k]["u"])
                     self._features[k]["u"] = self._features[k]["u"][self._out_idx.get(k),:,:]
                     feature_dim_accum += K_u * self._P
 
@@ -168,6 +260,7 @@ class CCVARPartial(CCVAR):
             feature_dim_accum += int(self._bias_enabler)
 
             self._features[k]["S_dim"] = feature_dim_accum
+            self._in_in_features[k]["S_dim"] = feature_dim_accum
 
 
 
@@ -281,7 +374,7 @@ class CCVARPartialModel(BaseModel):
         # print(f"New Params: {new_param}")
 
     def estimate(self, input_data, **kwargs):
-        return self._algorithm.forecast()
+        return self._algorithm.forecast(steps=kwargs.get("steps", 1))
 
 
 class CCVARModel(BaseModel):

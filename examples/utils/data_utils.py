@@ -34,13 +34,7 @@ def load_data(datasetParams):
         signal_poly -= np.mean(signal_poly)
         cc_data[2] = signal_poly
     
-    # cc_data = {
-    #     0: signal_node,
-    #     1: signal_edge,
-    #     2: signal_poly,
-    # }
 
-    # import pdb; pdb.set_trace()
 
     cellularComplex = {
         1: topology["B1"].astype(float),

@@ -35,6 +35,12 @@ DISAGREEMENT_METRICS = [
     "rollingGlobalRMSRelative",
 ]
 
+MATLAB_FIGSIZE = (7.61, 6.65)
+MATLAB_LINEWIDTH = 3.0
+MATLAB_AXIS_FONTSIZE = 25
+MATLAB_LABEL_FONTSIZE = 40
+MATLAB_FONTNAME = "Helvetica"
+
 DEFAULT_CASE_DEFS = {
     "global": {
         "name": "Global CC-VAR",
@@ -268,16 +274,19 @@ def _save_metric_comparison_plots(output_root: Path, case_metric_managers, compa
     annotation_text = f"C_data={c_data}, C_param={c_param}, c={c_val}, Q-hop={q_hop}, K={k_display}"
 
     for metric_name in DISAGREEMENT_METRICS:
-        fig, ax = plt.subplots(figsize=(9, 5))
+        fig, ax = plt.subplots(figsize=MATLAB_FIGSIZE)
         for case_name, label in comparison_cases:
             series = np.asarray(case_metric_managers[case_name]._errors.get(metric_name, []), dtype=float).reshape(-1)
-            ax.plot(series, linewidth=1.7, label=label)
+            ax.plot(series, linewidth=MATLAB_LINEWIDTH, label=label)
 
-        ax.set_title(metric_name)
-        ax.set_xlabel("t")
-        ax.set_ylabel(metric_name)
+        ax.set_title(metric_name, fontsize=MATLAB_AXIS_FONTSIZE, fontname=MATLAB_FONTNAME)
+        ax.set_xlabel("t", fontsize=MATLAB_LABEL_FONTSIZE, fontname=MATLAB_FONTNAME)
+        ax.set_ylabel(metric_name, fontsize=MATLAB_LABEL_FONTSIZE, fontname=MATLAB_FONTNAME)
         ax.grid(True, alpha=0.3)
-        ax.legend(loc="best")
+        ax.legend(loc="best", fontsize=MATLAB_AXIS_FONTSIZE, prop={"family": MATLAB_FONTNAME})
+        ax.tick_params(axis="both", labelsize=MATLAB_AXIS_FONTSIZE)
+        for tick in ax.get_xticklabels() + ax.get_yticklabels():
+            tick.set_fontname(MATLAB_FONTNAME)
         ax.text(
             0.02,
             0.98,
@@ -285,7 +294,8 @@ def _save_metric_comparison_plots(output_root: Path, case_metric_managers, compa
             transform=ax.transAxes,
             va="top",
             ha="left",
-            fontsize=9,
+            fontsize=MATLAB_AXIS_FONTSIZE,
+            fontname=MATLAB_FONTNAME,
             bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.8},
         )
         fig.tight_layout()

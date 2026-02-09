@@ -37,7 +37,7 @@ def keep_only_metrics(mm, keep):
 
 def init_metric_managers(cc_data, output_dir_fn, T_eval, keep_metrics=None):
     if T_eval <= 0:
-        raise ValueError("Need at least 2 time steps for one-step-ahead metric evaluation.")
+        raise ValueError("Need positive evaluation length; check T and forecast horizon.")
 
     keep = list(keep_metrics) if keep_metrics is not None else list(DEFAULT_KEEP_METRICS)
     metrics = {}
@@ -53,9 +53,18 @@ def init_metric_managers(cc_data, output_dir_fn, T_eval, keep_metrics=None):
     return metrics, output_dirs
 
 
-def evaluate_pending_predictions(metrics, pending_prediction_by_cluster, cc_data, cluster_out_global_idx, t):
+def evaluate_pending_predictions(
+    metrics,
+    pending_prediction_by_cluster,
+    cc_data,
+    cluster_out_global_idx,
+    t,
+    forecast_horizon=1,
+    eval_i=None,
+):
     postfix = {}
-    eval_i = t - 1
+    if eval_i is None:
+        eval_i = t - int(forecast_horizon)
     for dim in sorted(cc_data.keys()):
         pred_vec, valid_mask = aggregate_partial_prediction_to_global(
             prediction_by_cluster=pending_prediction_by_cluster,

@@ -32,6 +32,12 @@ ERROR_METRICS = [
 
 TV_ERROR_METRICS = ["tvNMSE", "tvMAE", "tvMAPE"]
 
+MATLAB_FIGSIZE = (7.61, 6.65)
+MATLAB_LINEWIDTH = 3.0
+MATLAB_AXIS_FONTSIZE = 25
+MATLAB_LABEL_FONTSIZE = 40
+MATLAB_FONTNAME = "Helvetica"
+
 DEFAULT_CASE_DEFS = {
     "global": {
         "name": "Global CC-VAR (Direct CCVAR)",
@@ -104,12 +110,13 @@ def _get_run_parameters(cfg):
     clustering_params = cfg.clustering.get("clusteringParameters", {})
     q_hop = clustering_params.get("Q-hop", "NA")
     model_algorithm = cfg.model.get("algorithmParam", {})
+    t_step = model_algorithm.get("Tstep", "NA")
     k_value = model_algorithm.get("K", "NA")
-    return c_data, c_param, c_val, q_hop, _format_k_for_display(k_value), _format_k_for_suffix(k_value)
+    return c_data, c_param, c_val, q_hop, t_step, _format_k_for_display(k_value), _format_k_for_suffix(k_value)
 
 
-def _parameter_suffix(c_data, c_param, c_val, q_hop, k_suffix):
-    return f"c_data_{c_data}_c_param_{c_param}_c_{c_val}_q_hop_{q_hop}_{k_suffix}"
+def _parameter_suffix(c_data, c_param, c_val, q_hop, t_step, k_suffix):
+    return f"c_data_{c_data}_c_param_{c_param}_c_{c_val}_q_hop_{q_hop}_t_step_{t_step}_{k_suffix}"
 
 
 def _mean_last_fraction(values, fraction=0.1):
@@ -178,8 +185,8 @@ def _save_case_metrics(metrics, output_dirs):
 
 
 def _save_last10pct_error_tables(output_root: Path, case_metric_managers, comparison_cases, cfg):
-    c_data, c_param, c_val, q_hop, k_display, k_suffix = _get_run_parameters(cfg)
-    suffix = _parameter_suffix(c_data, c_param, c_val, q_hop, k_suffix)
+    c_data, c_param, c_val, q_hop, t_step, k_display, k_suffix = _get_run_parameters(cfg)
+    suffix = _parameter_suffix(c_data, c_param, c_val, q_hop, t_step, k_suffix)
     table_dir = output_root / "comparison_tables"
     table_dir.mkdir(parents=True, exist_ok=True)
 
@@ -203,7 +210,7 @@ def _save_last10pct_error_tables(output_root: Path, case_metric_managers, compar
         md_lines = [
             f"# Errors Dim {dim} (Last 10%)",
             "",
-            f"Parameters: `C_data={c_data}`, `C_param={c_param}`, `c={c_val}`, `Q-hop={q_hop}`, `K={k_display}`",
+            f"Parameters: `C_data={c_data}`, `C_param={c_param}`, `c={c_val}`, `Q-hop={q_hop}`, `Tstep={t_step}`, `K={k_display}`",
             "",
             "| Metric | " + " | ".join(labels) + " |",
             "|" + "---|" + "|".join("---:" for _ in labels) + "|",
@@ -219,7 +226,7 @@ def _save_last10pct_error_tables(output_root: Path, case_metric_managers, compar
         tex_lines = [
             "\\begin{table}[t]",
             "\\centering",
-            f"\\caption{{Last 10\\% mean of TV error metrics for dim={dim} ($C_{{data}}={c_data}$, $C_{{param}}={c_param}$, $c={c_val}$, $Q\\text{{-}}hop={q_hop}$, $K={k_display}$).}}",
+            f"\\caption{{Last 10\\% mean of TV error metrics for dim={dim} ($C_{{data}}={c_data}$, $C_{{param}}={c_param}$, $c={c_val}$, $Q\\text{{-}}hop={q_hop}$, $T_{{step}}={t_step}$, $K={k_display}$).}}",
             f"\\begin{{tabular}}{{l{col_spec}}}",
             "\\hline",
             "Metric & " + " & ".join(labels) + " \\\\",
@@ -236,8 +243,8 @@ def _save_last10pct_error_tables(output_root: Path, case_metric_managers, compar
 
 
 def _save_error_comparison_plots(output_root: Path, case_metric_managers, comparison_cases, cfg):
-    c_data, c_param, c_val, q_hop, k_display, k_suffix = _get_run_parameters(cfg)
-    suffix = _parameter_suffix(c_data, c_param, c_val, q_hop, k_suffix)
+    c_data, c_param, c_val, q_hop, t_step, k_display, k_suffix = _get_run_parameters(cfg)
+    suffix = _parameter_suffix(c_data, c_param, c_val, q_hop, t_step, k_suffix)
     figure_dir = output_root / "comparison_plots"
     figure_dir.mkdir(parents=True, exist_ok=True)
 
@@ -245,20 +252,23 @@ def _save_error_comparison_plots(output_root: Path, case_metric_managers, compar
         return
     sample_case = next(iter(case_metric_managers.values()))
     dims = sorted(sample_case.keys())
-    annotation_text = f"C_data={c_data}, C_param={c_param}, c={c_val}, Q-hop={q_hop}, K={k_display}"
+    annotation_text = f"C_data={c_data}, C_param={c_param}, c={c_val}, Q-hop={q_hop}, Tstep={t_step}, K={k_display}"
 
     for dim in dims:
         for metric_name in ERROR_METRICS:
-            fig, ax = plt.subplots(figsize=(9, 5))
+            fig, ax = plt.subplots(figsize=MATLAB_FIGSIZE)
             for case_name, label in comparison_cases:
                 series = np.asarray(case_metric_managers[case_name][dim]._errors.get(metric_name, []), dtype=float).reshape(-1)
-                ax.plot(series, linewidth=1.7, label=label)
+                ax.plot(series, linewidth=MATLAB_LINEWIDTH, label=label)
 
-            ax.set_title(f"{metric_name} (dim={dim})")
-            ax.set_xlabel("t")
-            ax.set_ylabel(metric_name)
+            ax.set_title(f"{metric_name} (dim={dim})", fontsize=MATLAB_AXIS_FONTSIZE, fontname=MATLAB_FONTNAME)
+            ax.set_xlabel("t", fontsize=MATLAB_LABEL_FONTSIZE, fontname=MATLAB_FONTNAME)
+            ax.set_ylabel(metric_name, fontsize=MATLAB_LABEL_FONTSIZE, fontname=MATLAB_FONTNAME)
             ax.grid(True, alpha=0.3)
-            ax.legend(loc="best")
+            ax.legend(loc="best", fontsize=MATLAB_AXIS_FONTSIZE, prop={"family": MATLAB_FONTNAME})
+            ax.tick_params(axis="both", labelsize=MATLAB_AXIS_FONTSIZE)
+            for tick in ax.get_xticklabels() + ax.get_yticklabels():
+                tick.set_fontname(MATLAB_FONTNAME)
             ax.text(
                 0.02,
                 0.98,
@@ -266,7 +276,8 @@ def _save_error_comparison_plots(output_root: Path, case_metric_managers, compar
                 transform=ax.transAxes,
                 va="top",
                 ha="left",
-                fontsize=9,
+                fontsize=MATLAB_AXIS_FONTSIZE,
+                fontname=MATLAB_FONTNAME,
                 bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.8},
             )
             fig.tight_layout()
@@ -292,18 +303,120 @@ def _build_cluster_out_idx_from_nin(clusters, cc_data):
     return cluster_out_global_idx
 
 
-def _project_global_prediction_to_cluster_nin(global_prediction, cluster_out_global_idx):
+def _project_global_prediction_to_cluster_nin(global_prediction, cluster_out_global_idx, forecast_horizon):
     prediction_by_cluster = {}
     for cluster_head in sorted(cluster_out_global_idx.keys()):
         prediction_by_cluster[cluster_head] = {}
         for dim, idx in cluster_out_global_idx[cluster_head].items():
-            full_vec = np.asarray(global_prediction.get(dim, np.array([])), dtype=float).reshape(-1)
+            full_vec = _extract_horizon_vector(
+                values=global_prediction.get(dim, np.array([])),
+                forecast_horizon=forecast_horizon,
+            )
             if idx.size == 0 or full_vec.size == 0:
                 prediction_by_cluster[cluster_head][dim] = np.array([], dtype=float)
                 continue
             valid_idx = idx[idx < full_vec.size]
             prediction_by_cluster[cluster_head][dim] = full_vec[valid_idx]
     return prediction_by_cluster
+
+
+def _get_forecast_horizon(cfg):
+    model_algorithm = cfg.model.get("algorithmParam", {})
+    return max(1, int(model_algorithm.get("Tstep", 1)))
+
+
+def _extract_horizon_vector(values, forecast_horizon):
+    arr = np.asarray(values, dtype=float)
+    if arr.ndim == 0:
+        return arr.reshape(1)
+    if arr.ndim == 1:
+        return arr.reshape(-1)
+    if arr.ndim == 2:
+        # Predictions are expected as (N, H). Even in recursive fallback mode
+        # we may only have (N, 1), so always slice along the horizon axis.
+        horizon_idx = min(forecast_horizon - 1, arr.shape[1] - 1)
+        return arr[:, horizon_idx].reshape(-1)
+    flat = arr.reshape(arr.shape[0], -1)
+    if flat.shape[1] >= forecast_horizon:
+        return flat[:, forecast_horizon - 1].reshape(-1)
+    return flat[:, -1].reshape(-1)
+
+
+def _select_forecast_horizon(prediction_by_cluster, forecast_horizon):
+    selected_prediction = {}
+    for cluster_head in sorted(prediction_by_cluster.keys()):
+        selected_prediction[cluster_head] = {}
+        for dim in sorted(prediction_by_cluster[cluster_head].keys()):
+            selected_prediction[cluster_head][dim] = _extract_horizon_vector(
+                values=prediction_by_cluster[cluster_head][dim],
+                forecast_horizon=forecast_horizon,
+            )
+    return selected_prediction
+
+
+def _shift_algorithm_buffer_with_prediction(algorithm, prediction):
+    for key in sorted(prediction.keys()):
+        if key not in algorithm._data:
+            continue
+        old_data = algorithm._data[key][:, 1:]
+        if old_data.size == 0:
+            continue
+
+        new_col = np.asarray(prediction[key], dtype=float).reshape(-1, 1)
+        if new_col.shape[0] != old_data.shape[0]:
+            in_idx = getattr(algorithm, "_in_idx", {}).get(key, [])
+            if in_idx:
+                in_idx = np.asarray(in_idx, dtype=int)
+                valid_idx = in_idx[in_idx < new_col.shape[0]]
+                if valid_idx.size == old_data.shape[0]:
+                    new_col = new_col[valid_idx, :]
+
+        if new_col.shape[0] != old_data.shape[0]:
+            if new_col.shape[0] > old_data.shape[0]:
+                new_col = new_col[: old_data.shape[0], :]
+            else:
+                padded = np.zeros((old_data.shape[0], 1), dtype=float)
+                padded[: new_col.shape[0], 0] = new_col[:, 0]
+                new_col = padded
+
+        algorithm._data[key] = np.hstack([old_data, new_col])
+
+
+def _recursive_rollout_forecast(forecaster, one_step_fn, forecast_horizon):
+    rollout_obj = deepcopy(forecaster)
+    prediction = None
+    for step in range(forecast_horizon):
+        prediction = one_step_fn(rollout_obj)
+        if step < forecast_horizon - 1:
+            algorithm = rollout_obj._algorithm if hasattr(rollout_obj, "_algorithm") else rollout_obj
+            _shift_algorithm_buffer_with_prediction(algorithm=algorithm, prediction=prediction)
+    return prediction
+
+
+def _forecast_model_with_horizon(model, forecast_horizon):
+    if forecast_horizon == 1:
+        return model.estimate(input_data=None, steps=1)
+    try:
+        return model.estimate(input_data=None, steps=forecast_horizon)
+    except Exception:
+        return _recursive_rollout_forecast(
+            forecaster=model,
+            one_step_fn=lambda model_copy: model_copy.estimate(input_data=None, steps=1),
+            forecast_horizon=forecast_horizon,
+        )
+
+
+def _forecast_ccvar_with_horizon(model, forecast_horizon):
+    if forecast_horizon == 1:
+        return model.forecast(steps=1)
+    try:
+        return model.forecast(steps=forecast_horizon)
+    except Exception:
+        return _recursive_rollout_forecast(
+            forecaster=model,
+            one_step_fn=lambda model_copy: model_copy.forecast(steps=1),
+            forecast_horizon=forecast_horizon,
+        )
 
 
 def _create_pure_local_ccvar_states(cfg, cc_data, clusters):
@@ -349,9 +462,16 @@ def _run_distributed_forecast_case(
     cc_data,
     T: int,
     consensus_mode: str,
+    forecast_horizon: int,
 ):
-    metrics, output_dirs = _init_case_metrics(case_output_dir=case_output_dir, cc_data=cc_data, T_eval=T - 1)
-    pending_prediction_by_cluster = None
+    if T <= forecast_horizon:
+        raise ValueError(f"{case_name}: need T ({T}) > Tstep ({forecast_horizon}).")
+    metrics, output_dirs = _init_case_metrics(
+        case_output_dir=case_output_dir,
+        cc_data=cc_data,
+        T_eval=T - forecast_horizon,
+    )
+    pending_prediction_by_eval_t = {}
 
     progress_bar = tqdm(range(0, T), desc=case_name)
     for t in progress_bar:
@@ -365,6 +485,7 @@ def _run_distributed_forecast_case(
         for cluster_head in agent_list:
             agent_list[cluster_head].receive_data()
 
+        pending_prediction_by_cluster = pending_prediction_by_eval_t.pop(t, None)
         if pending_prediction_by_cluster is not None:
             postfix, _ = evaluate_pending_predictions(
                 metrics=metrics,
@@ -372,6 +493,7 @@ def _run_distributed_forecast_case(
                 cc_data=cc_data,
                 cluster_out_global_idx=cluster_out_global_idx,
                 t=t,
+                forecast_horizon=forecast_horizon,
             )
             progress_bar.set_postfix(postfix)
 
@@ -397,26 +519,50 @@ def _run_distributed_forecast_case(
                 if has_fresh_neighbor_params[cluster_head]:
                     agent_list[cluster_head].do_consensus()
 
-        prediction_by_cluster = {}
+        raw_prediction_by_cluster = {}
         for cluster_head in agent_list:
-            prediction_by_cluster[cluster_head] = agent_list[cluster_head].estimate(input_data=None, steps=1)
-        pending_prediction_by_cluster = prediction_by_cluster
+            raw_prediction_by_cluster[cluster_head] = _forecast_model_with_horizon(
+                model=agent_list[cluster_head]._model,
+                forecast_horizon=forecast_horizon,
+            )
+        eval_t = t + forecast_horizon
+        if eval_t < T:
+            pending_prediction_by_eval_t[eval_t] = _select_forecast_horizon(
+                prediction_by_cluster=raw_prediction_by_cluster,
+                forecast_horizon=forecast_horizon,
+            )
 
     _save_case_metrics(metrics=metrics, output_dirs=output_dirs)
     return metrics
 
 
-def _run_global_ccvar_forecast_case(case_name: str, case_output_dir: Path, cc_data, cellular_complex, clusters, cfg):
+def _run_global_ccvar_forecast_case(
+    case_name: str,
+    case_output_dir: Path,
+    cc_data,
+    cellular_complex,
+    clusters,
+    cfg,
+    forecast_horizon: int,
+):
     algorithm_param = _get_ccvar_algorithm_param(cfg)
+    # import pdb; pdb.set_trace()
     global_ccvar = CCVAR(algorithmParam=algorithm_param, cellularComplex=cellular_complex)
 
     T = min(cc_data[dim].shape[1] for dim in cc_data)
-    metrics, output_dirs = _init_case_metrics(case_output_dir=case_output_dir, cc_data=cc_data, T_eval=T - 1)
+    if T <= forecast_horizon:
+        raise ValueError(f"{case_name}: need T ({T}) > Tstep ({forecast_horizon}).")
+    metrics, output_dirs = _init_case_metrics(
+        case_output_dir=case_output_dir,
+        cc_data=cc_data,
+        T_eval=T - forecast_horizon,
+    )
     global_cluster_out_idx = _build_cluster_out_idx_from_nin(clusters=clusters, cc_data=cc_data)
 
-    pending_prediction = None
+    pending_prediction_by_eval_t = {}
     progress_bar = tqdm(range(0, T), desc=case_name)
     for t in progress_bar:
+        pending_prediction = pending_prediction_by_eval_t.pop(t, None)
         if pending_prediction is not None:
             postfix, _ = evaluate_pending_predictions(
                 metrics=metrics,
@@ -424,16 +570,23 @@ def _run_global_ccvar_forecast_case(case_name: str, case_output_dir: Path, cc_da
                 cc_data=cc_data,
                 cluster_out_global_idx=global_cluster_out_idx,
                 t=t,
+                forecast_horizon=forecast_horizon,
             )
             progress_bar.set_postfix(postfix)
 
         input_data = {dim: cc_data[dim][:, t] for dim in cc_data}
         global_ccvar.update(inputData=input_data)
-        global_forecast = global_ccvar.forecast(steps=1)
-        pending_prediction = _project_global_prediction_to_cluster_nin(
-            global_prediction=global_forecast,
-            cluster_out_global_idx=global_cluster_out_idx,
+        global_forecast = _forecast_ccvar_with_horizon(
+            model=global_ccvar,
+            forecast_horizon=forecast_horizon,
         )
+        eval_t = t + forecast_horizon
+        if eval_t < T:
+            pending_prediction_by_eval_t[eval_t] = _project_global_prediction_to_cluster_nin(
+                global_prediction=global_forecast,
+                cluster_out_global_idx=global_cluster_out_idx,
+                forecast_horizon=forecast_horizon,
+            )
 
     _save_case_metrics(metrics=metrics, output_dirs=output_dirs)
     return metrics
@@ -446,12 +599,20 @@ def _run_pure_local_ccvar_forecast_case(
     cluster_out_global_idx,
     cc_data,
     T: int,
+    forecast_horizon: int,
 ):
-    metrics, output_dirs = _init_case_metrics(case_output_dir=case_output_dir, cc_data=cc_data, T_eval=T - 1)
-    pending_prediction_by_cluster = None
+    if T <= forecast_horizon:
+        raise ValueError(f"{case_name}: need T ({T}) > Tstep ({forecast_horizon}).")
+    metrics, output_dirs = _init_case_metrics(
+        case_output_dir=case_output_dir,
+        cc_data=cc_data,
+        T_eval=T - forecast_horizon,
+    )
+    pending_prediction_by_eval_t = {}
 
     progress_bar = tqdm(range(0, T), desc=case_name)
     for t in progress_bar:
+        pending_prediction_by_cluster = pending_prediction_by_eval_t.pop(t, None)
         if pending_prediction_by_cluster is not None:
             postfix, _ = evaluate_pending_predictions(
                 metrics=metrics,
@@ -459,16 +620,25 @@ def _run_pure_local_ccvar_forecast_case(
                 cc_data=cc_data,
                 cluster_out_global_idx=cluster_out_global_idx,
                 t=t,
+                forecast_horizon=forecast_horizon,
             )
             progress_bar.set_postfix(postfix)
 
-        prediction_by_cluster = {}
+        raw_prediction_by_cluster = {}
         for cluster_head in sorted(state_by_cluster.keys()):
             state = state_by_cluster[cluster_head]
             input_data = {dim: state["data"][dim][:, t] for dim in sorted(state["data"].keys())}
             state["model"].update(inputData=input_data)
-            prediction_by_cluster[cluster_head] = state["model"].forecast(steps=1)
-        pending_prediction_by_cluster = prediction_by_cluster
+            raw_prediction_by_cluster[cluster_head] = _forecast_ccvar_with_horizon(
+                model=state["model"],
+                forecast_horizon=forecast_horizon,
+            )
+        eval_t = t + forecast_horizon
+        if eval_t < T:
+            pending_prediction_by_eval_t[eval_t] = _select_forecast_horizon(
+                prediction_by_cluster=raw_prediction_by_cluster,
+                forecast_horizon=forecast_horizon,
+            )
 
     _save_case_metrics(metrics=metrics, output_dirs=output_dirs)
     return metrics
@@ -486,6 +656,7 @@ def main(cfg: DictConfig):
 
     clusters = instantiate(config=cfg.clustering, cellularComplex=cellular_complex)
     case_plan = _resolve_case_plan(cfg)
+    forecast_horizon = _get_forecast_horizon(cfg)
 
     pure_local_state_cache = None
     for case_def in case_plan:
@@ -502,6 +673,7 @@ def main(cfg: DictConfig):
                 cellular_complex=cellular_complex,
                 clusters=clusters,
                 cfg=cfg,
+                forecast_horizon=forecast_horizon,
             )
         elif runner == "pure_local_direct":
             if pure_local_state_cache is None:
@@ -518,6 +690,7 @@ def main(cfg: DictConfig):
                 cluster_out_global_idx=pure_local_out_idx,
                 cc_data=cc_data,
                 T=T_pure_local,
+                forecast_horizon=forecast_horizon,
             )
         elif runner == "distributed":
             agents, out_idx, T_case = create_cluster_agents(
@@ -535,6 +708,7 @@ def main(cfg: DictConfig):
                 cc_data=cc_data,
                 T=T_case,
                 consensus_mode=case_def.get("consensus_mode", "gated"),
+                forecast_horizon=forecast_horizon,
             )
         else:
             continue

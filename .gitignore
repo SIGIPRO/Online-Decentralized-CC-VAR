@@ -5,3 +5,4 @@ __pycache__
 outputs
 *.pdf
 .DS_Store
+ccvar_ex.py
