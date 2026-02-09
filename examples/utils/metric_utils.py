@@ -357,6 +357,27 @@ def rollingCentroidToGlobal_metric(*, manager, i, **_):
         return np.nan
 
 
+@general_metric(name="tvCentroidToGlobalRelative", output="scalar")
+def tvCentroidToGlobalRelative_metric(*, prediction, groundTruth, **_):
+    global_theta = _extract_global_vector(groundTruth)
+    if global_theta.size == 0:
+        return np.nan
+    denom = float(np.linalg.norm(global_theta))
+    denom = max(denom, 1e-12)
+    curr_val = tvCentroidToGlobal_metric(prediction=prediction, groundTruth=groundTruth)
+    if not np.isfinite(curr_val):
+        return np.nan
+    return float(curr_val / denom)
+
+
+@general_metric(name="rollingCentroidToGlobalRelative", output="scalar")
+def rollingCentroidToGlobalRelative_metric(*, manager, i, **_):
+    try:
+        return float(np.mean(manager._errors["tvCentroidToGlobalRelativesingle"][: i + 1]))
+    except Exception:
+        return np.nan
+
+
 @general_metric(name="tvGlobalRMS", output="scalar")
 def tvGlobalRMS_metric(*, prediction, groundTruth, **_):
     theta = _extract_param_matrix(prediction)

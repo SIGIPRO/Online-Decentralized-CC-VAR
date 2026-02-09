@@ -48,8 +48,8 @@ DEFAULT_CASE_DEFS = {
         "protocol_overrides": {},
     },
     "pure_local": {
-        "name": "Pure Local CC-VAR (Nin Open, No Comm)",
-        "label": "Pure Local",
+        "name": "Local CC-VAR (Nin Open, No Comm)",
+        "label": "Local",
         "runner": "pure_local_direct",
         "consensus_mode": "off",
         "force_in_equals_out": False,
@@ -64,8 +64,8 @@ DEFAULT_CASE_DEFS = {
         "protocol_overrides": {"C_data": int(1e9)},
     },
     "parameter_dataset": {
-        "name": "Parameter + Dataset CC-VAR (Gated)",
-        "label": "Parameter + Dataset",
+        "name": "Distributed CC-VAR (Gated)",
+        "label": "Distributed",
         "runner": "distributed",
         "consensus_mode": "gated",
         "force_in_equals_out": False,
@@ -252,8 +252,6 @@ def _save_error_comparison_plots(output_root: Path, case_metric_managers, compar
         return
     sample_case = next(iter(case_metric_managers.values()))
     dims = sorted(sample_case.keys())
-    annotation_text = f"C_data={c_data}, C_param={c_param}, c={c_val}, Q-hop={q_hop}, Tstep={t_step}, K={k_display}"
-
     for dim in dims:
         for metric_name in ERROR_METRICS:
             fig, ax = plt.subplots(figsize=MATLAB_FIGSIZE)
@@ -261,25 +259,16 @@ def _save_error_comparison_plots(output_root: Path, case_metric_managers, compar
                 series = np.asarray(case_metric_managers[case_name][dim]._errors.get(metric_name, []), dtype=float).reshape(-1)
                 ax.plot(series, linewidth=MATLAB_LINEWIDTH, label=label)
 
-            ax.set_title(f"{metric_name} (dim={dim})", fontsize=MATLAB_AXIS_FONTSIZE, fontname=MATLAB_FONTNAME)
             ax.set_xlabel("t", fontsize=MATLAB_LABEL_FONTSIZE, fontname=MATLAB_FONTNAME)
-            ax.set_ylabel(metric_name, fontsize=MATLAB_LABEL_FONTSIZE, fontname=MATLAB_FONTNAME)
+            ylabel = "NMSE" if metric_name == "rollingNMSE" else metric_name
+            ax.set_ylabel(ylabel, fontsize=MATLAB_LABEL_FONTSIZE, fontname=MATLAB_FONTNAME)
+            if metric_name in {"tvNMSE", "rollingNMSE"}:
+                ax.set_ylim(0.0, 1.0)
             ax.grid(True, alpha=0.3)
-            ax.legend(loc="best", fontsize=MATLAB_AXIS_FONTSIZE, prop={"family": MATLAB_FONTNAME})
+            ax.legend(loc="best", prop={"family": MATLAB_FONTNAME, "size": MATLAB_AXIS_FONTSIZE})
             ax.tick_params(axis="both", labelsize=MATLAB_AXIS_FONTSIZE)
             for tick in ax.get_xticklabels() + ax.get_yticklabels():
                 tick.set_fontname(MATLAB_FONTNAME)
-            ax.text(
-                0.02,
-                0.98,
-                annotation_text,
-                transform=ax.transAxes,
-                va="top",
-                ha="left",
-                fontsize=MATLAB_AXIS_FONTSIZE,
-                fontname=MATLAB_FONTNAME,
-                bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.8},
-            )
             fig.tight_layout()
 
             file_stem = f"errors_dim_{dim}_{metric_name}_{suffix}"

@@ -16,7 +16,7 @@ cases:
     protocol_overrides: {}
 
   pure_local:
-    label: Pure Local
+    label: Local
     runner: pure_local_direct
     consensus_mode: off
     force_in_equals_out: false
@@ -31,7 +31,7 @@ cases:
       C_data: 1000000000
 
   parameter_dataset:
-    label: Parameter + Dataset
+    label: Distributed
     runner: distributed
     consensus_mode: gated
     force_in_equals_out: false
