@@ -35,11 +35,40 @@ DISAGREEMENT_METRICS = [
     "rollingGlobalRMSRelative",
 ]
 
-COMPARISON_CASES = [
-    ("Pure Local CC-VAR (Nin Open, No Comm)", "Pure Local"),
-    ("Parameter-Only CC-VAR", "Parameter Only"),
-    ("Parameter + Dataset CC-VAR (Gated)", "Parameter + Dataset"),
-]
+DEFAULT_CASE_DEFS = {
+    "global": {
+        "name": "Global CC-VAR",
+        "label": "Global",
+        "runner": "global_direct",
+        "consensus_mode": "off",
+        "force_in_equals_out": False,
+        "protocol_overrides": {},
+    },
+    "pure_local": {
+        "name": "Pure Local CC-VAR (Nin Open, No Comm)",
+        "label": "Pure Local",
+        "runner": "pure_local_direct",
+        "consensus_mode": "off",
+        "force_in_equals_out": False,
+        "protocol_overrides": {},
+    },
+    "parameter_only": {
+        "name": "Parameter-Only CC-VAR",
+        "label": "Parameter Only",
+        "runner": "distributed",
+        "consensus_mode": "gated",
+        "force_in_equals_out": True,
+        "protocol_overrides": {"C_data": int(1e9)},
+    },
+    "parameter_dataset": {
+        "name": "Parameter + Dataset CC-VAR (Gated)",
+        "label": "Parameter + Dataset",
+        "runner": "distributed",
+        "consensus_mode": "gated",
+        "force_in_equals_out": False,
+        "protocol_overrides": {},
+    },
+}
 
 
 def _snapshot_case_params(agent_list):
@@ -136,32 +165,74 @@ def _mean_last_fraction(values, fraction=0.1):
     return float(np.mean(tail))
 
 
-def _save_last10pct_tables(output_root: Path, case_metric_managers, cfg):
+def _merge_case_def(base_def, override_def):
+    merged = deepcopy(base_def)
+    for key, value in override_def.items():
+        if key == "protocol_overrides":
+            merged_protocol = dict(merged.get("protocol_overrides", {}))
+            if value is not None:
+                merged_protocol.update(dict(value))
+            merged["protocol_overrides"] = merged_protocol
+        else:
+            merged[key] = value
+    return merged
+
+
+def _resolve_case_plan(cfg):
+    exp_cfg = cfg.get("experiment", {})
+    run_cfg = exp_cfg.get("run", {})
+    enabled_cases = run_cfg.get("enabled_cases", list(DEFAULT_CASE_DEFS.keys()))
+    cases_cfg = exp_cfg.get("cases", {})
+
+    plan = []
+    for case_id in enabled_cases:
+        if case_id not in DEFAULT_CASE_DEFS:
+            continue
+        override_def = _to_plain_config(cases_cfg.get(case_id, {})) or {}
+        resolved = _merge_case_def(DEFAULT_CASE_DEFS[case_id], override_def)
+        resolved["id"] = case_id
+        plan.append(resolved)
+    return plan
+
+
+def _get_ccvar_algorithm_param(cfg):
+    algorithm_param = deepcopy(_to_plain_config(cfg.model.get("algorithmParam", {})) or {})
+    algorithm_param.pop("in_idx", None)
+    algorithm_param.pop("out_idx", None)
+    return algorithm_param
+
+
+def _save_last10pct_tables(output_root: Path, case_metric_managers, comparison_cases, cfg):
     c_data, c_param, c_val, q_hop, k_display, k_suffix = _get_run_parameters(cfg)
     suffix = _parameter_suffix(c_data, c_param, c_val, q_hop, k_suffix)
     table_dir = output_root / "comparison_tables"
     table_dir.mkdir(parents=True, exist_ok=True)
 
+    if not comparison_cases:
+        return
     tv_metrics = [m for m in DISAGREEMENT_METRICS if m.startswith("tv")]
     rows = []
     for metric_name in tv_metrics:
         vals = []
-        for case_name, _ in COMPARISON_CASES:
+        for case_name, _ in comparison_cases:
             case_mm = case_metric_managers[case_name]
             vals.append(_mean_last_fraction(case_mm._errors.get(metric_name, []), fraction=0.1))
         rows.append((metric_name, vals))
+
+    labels = [label for _, label in comparison_cases]
+    col_spec = "c" * len(labels)
 
     md_lines = [
         f"# Disagreement (Last 10%)",
         f"",
         f"Parameters: `C_data={c_data}`, `C_param={c_param}`, `c={c_val}`, `Q-hop={q_hop}`, `K={k_display}`",
         f"",
-        "| Metric | Pure Local | Parameter Only | Parameter + Dataset |",
-        "|---|---:|---:|---:|",
+        "| Metric | " + " | ".join(labels) + " |",
+        "|" + "---|" + "|".join("---:" for _ in labels) + "|",
     ]
     for metric_name, vals in rows:
         formatted = [("nan" if not np.isfinite(v) else f"{v:.6e}") for v in vals]
-        md_lines.append(f"| {metric_name} | {formatted[0]} | {formatted[1]} | {formatted[2]} |")
+        md_lines.append(f"| {metric_name} | " + " | ".join(formatted) + " |")
 
     md_path = table_dir / f"disagreement_{suffix}.md"
     with open(md_path, "w", encoding="utf-8") as file:
@@ -171,16 +242,14 @@ def _save_last10pct_tables(output_root: Path, case_metric_managers, cfg):
         "\\begin{table}[t]",
         "\\centering",
         f"\\caption{{Last 10\\% mean of TV disagreement metrics ($C_{{data}}={c_data}$, $C_{{param}}={c_param}$, $c={c_val}$, $Q\\text{{-}}hop={q_hop}$, $K={k_display}$).}}",
-        "\\begin{tabular}{lccc}",
+        f"\\begin{{tabular}}{{l{col_spec}}}",
         "\\hline",
-        "Metric & Pure Local & Parameter Only & Parameter + Dataset \\\\",
+        "Metric & " + " & ".join(labels) + " \\\\",
         "\\hline",
     ]
     for metric_name, vals in rows:
         formatted = [("nan" if not np.isfinite(v) else f"{v:.6e}") for v in vals]
-        tex_lines.append(
-            f"{metric_name} & {formatted[0]} & {formatted[1]} & {formatted[2]} \\\\"
-        )
+        tex_lines.append(f"{metric_name} & " + " & ".join(formatted) + " \\\\")
     tex_lines.extend(["\\hline", "\\end{tabular}", "\\end{table}"])
 
     tex_path = table_dir / f"disagreement_{suffix}.tex"
@@ -188,17 +257,19 @@ def _save_last10pct_tables(output_root: Path, case_metric_managers, cfg):
         file.write("\n".join(tex_lines) + "\n")
 
 
-def _save_metric_comparison_plots(output_root: Path, case_metric_managers, cfg):
+def _save_metric_comparison_plots(output_root: Path, case_metric_managers, comparison_cases, cfg):
     c_data, c_param, c_val, q_hop, k_display, k_suffix = _get_run_parameters(cfg)
     suffix = _parameter_suffix(c_data, c_param, c_val, q_hop, k_suffix)
     figure_dir = output_root / "comparison_plots"
     figure_dir.mkdir(parents=True, exist_ok=True)
+    if not comparison_cases:
+        return
 
     annotation_text = f"C_data={c_data}, C_param={c_param}, c={c_val}, Q-hop={q_hop}, K={k_display}"
 
     for metric_name in DISAGREEMENT_METRICS:
         fig, ax = plt.subplots(figsize=(9, 5))
-        for case_name, label in COMPARISON_CASES:
+        for case_name, label in comparison_cases:
             series = np.asarray(case_metric_managers[case_name]._errors.get(metric_name, []), dtype=float).reshape(-1)
             ax.plot(series, linewidth=1.7, label=label)
 
@@ -252,12 +323,10 @@ def _create_callback(metric_manager, global_param_history):
     return _callback
 
 
-def _create_pure_local_ccvar_states(cc_data, clusters):
+def _create_pure_local_ccvar_states(cfg, cc_data, clusters):
     T = None
     state_by_cluster = {}
-    model_cfg_path = Path(__file__).resolve().parents[1] / "conf" / "model" / "ccvar.yaml"
-    model_cfg = OmegaConf.load(model_cfg_path)
-    algorithm_param = OmegaConf.to_container(model_cfg.algorithmParam, resolve=True)
+    algorithm_param = _get_ccvar_algorithm_param(cfg)
 
     for cluster_head in sorted(clusters.Nin.keys()):
         nin_idx = {}
@@ -317,97 +386,114 @@ def main(cfg: DictConfig):
     cc_data, cellular_complex = load_data(cfg.dataset)
     output_root = (Path.cwd() / "outputs" / cfg.dataset.dataset_name / "dynamic_regret").resolve()
     output_root.mkdir(parents=True, exist_ok=True)
+    case_plan = _resolve_case_plan(cfg)
+    case_ids = {case_def["id"] for case_def in case_plan}
+    comparison_cases = []
 
     global_param_history = []
     case_metric_managers = {}
 
-    model_cfg_path = Path(__file__).resolve().parents[1] / "conf" / "model" / "ccvar.yaml"
-    model_cfg = OmegaConf.load(model_cfg_path)
-    algorithm_param = OmegaConf.to_container(model_cfg.algorithmParam, resolve=True)
+    global_case_def = next((case_def for case_def in case_plan if case_def["id"] == "global"), deepcopy(DEFAULT_CASE_DEFS["global"]))
+    global_enabled = "global" in case_ids
+    global_case_name = global_case_def.get("name", DEFAULT_CASE_DEFS["global"]["name"])
+    algorithm_param = _get_ccvar_algorithm_param(cfg)
     global_ccvar = CCVAR(algorithmParam=algorithm_param, cellularComplex=cellular_complex)
     T_global = min(cc_data[dim].shape[1] for dim in cc_data)
-    global_mm, global_output = _init_case_metric_manager(output_root, "Global CC-VAR", T=T_global)
+    if global_enabled:
+        global_mm, global_output = _init_case_metric_manager(output_root, global_case_name, T=T_global)
+    else:
+        global_mm, global_output = None, None
 
-    global_progress = tqdm(range(T_global), desc="Global CC-VAR (Direct CCVAR)")
+    global_progress = tqdm(range(T_global), desc=global_case_name)
     for t in global_progress:
         input_data = {dim: cc_data[dim][:, t] for dim in cc_data}
         global_ccvar.update(inputData=input_data)
         global_vector = _flatten_theta_dict(global_ccvar._theta)
-        snapshot = {0: global_vector}
         global_param_history.append(global_vector.copy())
-        global_mm.step_calculation(
-            i=t,
-            prediction=snapshot,
-            groundTruth={"global_vector": global_vector},
-            verbose=False,
-        )
-        global_progress.set_postfix(
-            {
-                "selfD": f"{global_mm._errors['tvSelfDisagreement'][t]:.3e}",
-                "globD": f"{global_mm._errors['tvGlobalDisagreement'][t]:.3e}",
-                "selfRMS": f"{global_mm._errors['tvSelfRMS'][t]:.3e}",
-                "globRMS": f"{global_mm._errors['tvGlobalRMS'][t]:.3e}",
-            }
-        )
-    _save_case_metrics(global_mm, global_output)
+        if global_mm is not None:
+            snapshot = {0: global_vector}
+            global_mm.step_calculation(
+                i=t,
+                prediction=snapshot,
+                groundTruth={"global_vector": global_vector},
+                verbose=False,
+            )
+            global_progress.set_postfix(
+                {
+                    "selfD": f"{global_mm._errors['tvSelfDisagreement'][t]:.3e}",
+                    "globD": f"{global_mm._errors['tvGlobalDisagreement'][t]:.3e}",
+                    "selfRMS": f"{global_mm._errors['tvSelfRMS'][t]:.3e}",
+                    "globRMS": f"{global_mm._errors['tvGlobalRMS'][t]:.3e}",
+                }
+            )
+    if global_mm is not None and global_output is not None:
+        _save_case_metrics(global_mm, global_output)
 
     clusters = instantiate(config=cfg.clustering, cellularComplex=cellular_complex)
+    pure_local_state_cache = None
+    for case_def in case_plan:
+        if case_def["id"] == "global":
+            continue
 
-    pure_local_states, T_pure_local = _create_pure_local_ccvar_states(
-        cc_data=cc_data,
-        clusters=clusters,
-    )
-    pure_local_mm, pure_local_output = _init_case_metric_manager(
-        output_root, "Pure Local CC-VAR (Nin Open, No Comm)", T=T_pure_local
-    )
-    _run_pure_local_ccvar_case(
-        case_name="Pure Local CC-VAR (Nin Open, No Comm)",
-        state_by_cluster=pure_local_states,
-        T=T_pure_local,
-        metric_manager=pure_local_mm,
-        global_param_history=global_param_history,
-    )
-    _save_case_metrics(pure_local_mm, pure_local_output)
-    case_metric_managers["Pure Local CC-VAR (Nin Open, No Comm)"] = pure_local_mm
+        case_name = case_def.get("name", case_def["id"])
+        case_label = case_def.get("label", case_name)
+        runner = case_def.get("runner", "")
 
-    param_only_agents, _, T_param_only = create_cluster_agents(
-        cfg=deepcopy(cfg),
-        cc_data=cc_data,
-        clusters=clusters,
-        force_in_equals_out=True,
-        protocol_overrides={"C_data": int(1e9)},
-    )
-    param_only_mm, param_only_output = _init_case_metric_manager(output_root, "Parameter-Only CC-VAR", T=T_param_only)
-    run_case(
-        case_name="Parameter-Only CC-VAR",
-        agent_list=param_only_agents,
-        T=T_param_only,
-        consensus_mode="gated",
-        on_step_end=_create_callback(metric_manager=param_only_mm, global_param_history=global_param_history),
-    )
-    _save_case_metrics(param_only_mm, param_only_output)
-    case_metric_managers["Parameter-Only CC-VAR"] = param_only_mm
+        if runner == "pure_local_direct":
+            if pure_local_state_cache is None:
+                pure_local_state_cache = _create_pure_local_ccvar_states(
+                    cfg=cfg,
+                    cc_data=cc_data,
+                    clusters=clusters,
+                )
+            pure_local_states, T_pure_local = pure_local_state_cache
+            curr_mm, curr_output = _init_case_metric_manager(
+                output_root, case_name, T=T_pure_local
+            )
+            _run_pure_local_ccvar_case(
+                case_name=case_name,
+                state_by_cluster=pure_local_states,
+                T=T_pure_local,
+                metric_manager=curr_mm,
+                global_param_history=global_param_history,
+            )
+        elif runner == "distributed":
+            curr_agents, _, T_case = create_cluster_agents(
+                cfg=deepcopy(cfg),
+                cc_data=cc_data,
+                clusters=clusters,
+                force_in_equals_out=bool(case_def.get("force_in_equals_out", False)),
+                protocol_overrides=case_def.get("protocol_overrides", {}),
+            )
+            curr_mm, curr_output = _init_case_metric_manager(output_root, case_name, T=T_case)
+            run_case(
+                case_name=case_name,
+                agent_list=curr_agents,
+                T=T_case,
+                consensus_mode=case_def.get("consensus_mode", "gated"),
+                on_step_end=_create_callback(metric_manager=curr_mm, global_param_history=global_param_history),
+            )
+        else:
+            continue
 
-    current_agents, _, T_current = create_cluster_agents(
-        cfg=deepcopy(cfg),
-        cc_data=cc_data,
-        clusters=clusters,
-    )
-    current_mm, current_output = _init_case_metric_manager(output_root, "Parameter + Dataset CC-VAR (Gated)", T=T_current)
-    run_case(
-        case_name="Parameter + Dataset CC-VAR (Gated)",
-        agent_list=current_agents,
-        T=T_current,
-        consensus_mode="gated",
-        on_step_end=_create_callback(metric_manager=current_mm, global_param_history=global_param_history),
-    )
-    _save_case_metrics(current_mm, current_output)
-    case_metric_managers["Parameter + Dataset CC-VAR (Gated)"] = current_mm
+        _save_case_metrics(curr_mm, curr_output)
+        case_metric_managers[case_name] = curr_mm
+        comparison_cases.append((case_name, case_label))
 
-    _save_last10pct_tables(output_root=output_root, case_metric_managers=case_metric_managers, cfg=cfg)
-    _save_metric_comparison_plots(output_root=output_root, case_metric_managers=case_metric_managers, cfg=cfg)
+    _save_last10pct_tables(
+        output_root=output_root,
+        case_metric_managers=case_metric_managers,
+        comparison_cases=comparison_cases,
+        cfg=cfg,
+    )
+    _save_metric_comparison_plots(
+        output_root=output_root,
+        case_metric_managers=case_metric_managers,
+        comparison_cases=comparison_cases,
+        cfg=cfg,
+    )
 
-    print(f"All four cases finished. Disagreement metrics and comparison artifacts saved under: {output_root}")
+    print(f"Dynamic regret runs finished. Disagreement metrics and comparison artifacts saved under: {output_root}")
 
 
 if __name__ == "__main__":

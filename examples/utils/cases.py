@@ -1,4 +1,4 @@
-from pathlib import Path
+from copy import deepcopy
 
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
@@ -7,10 +7,18 @@ from tqdm import tqdm  # type: ignore[import-untyped]
 from src.core import BaseAgent
 
 
-def create_global_agent(cfg: DictConfig, cc_data, cellular_complex):
-    model_cfg_path = Path(__file__).resolve().parents[2] / "conf" / "model" / "ccvar.yaml"
-    model_cfg = OmegaConf.load(model_cfg_path)
+def _build_global_ccvar_model_cfg(cfg: DictConfig):
+    model_cfg = OmegaConf.create(OmegaConf.to_container(cfg.model, resolve=True))
+    model_cfg._target_ = "src.implementations.models.ccvar.CCVARModel"
+    algorithm_param = deepcopy(model_cfg.get("algorithmParam", {}))
+    algorithm_param.pop("in_idx", None)
+    algorithm_param.pop("out_idx", None)
+    model_cfg.algorithmParam = algorithm_param
+    return model_cfg
 
+
+def create_global_agent(cfg: DictConfig, cc_data, cellular_complex):
+    model_cfg = _build_global_ccvar_model_cfg(cfg)
     processed_data = {dim: data.copy() for dim, data in cc_data.items()}
     global_idx = {dim: list(range(processed_data[dim].shape[0])) for dim in processed_data}
 

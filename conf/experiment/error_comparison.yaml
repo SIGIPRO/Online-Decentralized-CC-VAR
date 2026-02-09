@@ -1,0 +1,73 @@
+name: error_comparison
+
+run:
+  enabled_cases:
+    - global
+    - pure_local
+    - parameter_only
+    - parameter_dataset
+
+cases:
+  global:
+    label: Global
+    runner: global_direct
+    consensus_mode: off
+    force_in_equals_out: false
+    protocol_overrides: {}
+
+  pure_local:
+    label: Pure Local
+    runner: pure_local_direct
+    consensus_mode: off
+    force_in_equals_out: false
+    protocol_overrides: {}
+
+  parameter_only:
+    label: Parameter Only
+    runner: distributed
+    consensus_mode: gated
+    force_in_equals_out: true
+    protocol_overrides:
+      C_data: 1000000000
+
+  parameter_dataset:
+    label: Parameter + Dataset
+    runner: distributed
+    consensus_mode: gated
+    force_in_equals_out: false
+    protocol_overrides: {}
+
+sweep:
+  stage1:
+    enabled: true
+    fixed:
+      K: [5, [5, 5], 5]
+      Q_hop: 1
+    grid:
+      C_data: [1, 2, 5, 10]
+      C_param: [1, 2, 5, 10]
+    selection:
+      case: parameter_dataset
+      metric: tvNMSE
+      tail_fraction: 0.1
+      reduce_over_dims: mean
+
+  stage2:
+    enabled: true
+    fixed:
+      K: [5, [5, 5], 5]
+    grid:
+      Q_hop: [1, 2, 3, 4]
+    selection:
+      case: parameter_dataset
+      metric: tvNMSE
+      tail_fraction: 0.1
+      reduce_over_dims: mean
+
+report:
+  pivot_table:
+    rows: C_data
+    cols: C_param
+  include:
+    - errors
+    - disagreement

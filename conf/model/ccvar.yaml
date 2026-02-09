@@ -1,24 +1,5 @@
+defaults:
+  - ccvar_common
+  - _self_
+
 _target_: src.implementations.models.ccvar.CCVARModel
-_convert_: partial
-algorithmParam:
-  Tstep: 1
-  P: 2
-  K:
-  - 3
-  - - 3
-    - 3
-  - 3
-  mu:
-  - 0
-  - - 0
-    - 0
-  - 0
-  lambda: 0.01
-  gamma: 0.98
-  enabler:
-  - true
-  - true
-  - true
-  LassoEn: false
-  FeatureNormalzn: false
-  BiasEn: true

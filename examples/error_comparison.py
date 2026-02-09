@@ -1,6 +1,8 @@
 from copy import deepcopy
 from pathlib import Path
+import pickle
 
+import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm  # type: ignore[import-untyped]
 
@@ -19,9 +21,144 @@ from examples.utils.metric_utils import (
     save_metric_plots,
 )
 
+ERROR_METRICS = [
+    "tvNMSE",
+    "tvMAE",
+    "tvMAPE",
+    "rollingNMSE",
+    "rollingMAE",
+    "rollingMAPE",
+]
+
+TV_ERROR_METRICS = ["tvNMSE", "tvMAE", "tvMAPE"]
+
+DEFAULT_CASE_DEFS = {
+    "global": {
+        "name": "Global CC-VAR (Direct CCVAR)",
+        "label": "Global",
+        "runner": "global_direct",
+        "consensus_mode": "off",
+        "force_in_equals_out": False,
+        "protocol_overrides": {},
+    },
+    "pure_local": {
+        "name": "Pure Local CC-VAR (Nin Open, No Comm)",
+        "label": "Pure Local",
+        "runner": "pure_local_direct",
+        "consensus_mode": "off",
+        "force_in_equals_out": False,
+        "protocol_overrides": {},
+    },
+    "parameter_only": {
+        "name": "Parameter-Only CC-VAR",
+        "label": "Parameter Only",
+        "runner": "distributed",
+        "consensus_mode": "gated",
+        "force_in_equals_out": True,
+        "protocol_overrides": {"C_data": int(1e9)},
+    },
+    "parameter_dataset": {
+        "name": "Parameter + Dataset CC-VAR (Gated)",
+        "label": "Parameter + Dataset",
+        "runner": "distributed",
+        "consensus_mode": "gated",
+        "force_in_equals_out": False,
+        "protocol_overrides": {},
+    },
+}
+
 
 def _slugify_case_name(case_name: str) -> str:
     return case_name.lower().replace(" ", "_").replace("(", "").replace(")", "")
+
+
+def _to_plain_config(value):
+    if OmegaConf.is_config(value):
+        return OmegaConf.to_container(value, resolve=True)
+    return value
+
+
+def _format_k_for_suffix(k_value):
+    plain = _to_plain_config(k_value)
+    if isinstance(plain, list):
+        parts = []
+        for item in plain:
+            if isinstance(item, list):
+                parts.append("-".join(str(x) for x in item))
+            else:
+                parts.append(str(item))
+        return "k_" + "_".join(parts).replace(" ", "")
+    return f"k_{str(plain).replace(' ', '')}"
+
+
+def _format_k_for_display(k_value):
+    plain = _to_plain_config(k_value)
+    return str(plain).replace(" ", "")
+
+
+def _get_run_parameters(cfg):
+    c_data = cfg.protocol.get("C_data", "NA")
+    c_param = cfg.protocol.get("C_param", "NA")
+    mixing_eta = cfg.mixing.get("eta", {})
+    c_val = mixing_eta.get("c", "NA")
+    clustering_params = cfg.clustering.get("clusteringParameters", {})
+    q_hop = clustering_params.get("Q-hop", "NA")
+    model_algorithm = cfg.model.get("algorithmParam", {})
+    k_value = model_algorithm.get("K", "NA")
+    return c_data, c_param, c_val, q_hop, _format_k_for_display(k_value), _format_k_for_suffix(k_value)
+
+
+def _parameter_suffix(c_data, c_param, c_val, q_hop, k_suffix):
+    return f"c_data_{c_data}_c_param_{c_param}_c_{c_val}_q_hop_{q_hop}_{k_suffix}"
+
+
+def _mean_last_fraction(values, fraction=0.1):
+    arr = np.asarray(values, dtype=float).reshape(-1)
+    if arr.size == 0:
+        return np.nan
+    tail_len = max(1, int(np.ceil(arr.size * fraction)))
+    tail = arr[-tail_len:]
+    tail = tail[np.isfinite(tail)]
+    if tail.size == 0:
+        return np.nan
+    return float(np.mean(tail))
+
+
+def _merge_case_def(base_def, override_def):
+    merged = deepcopy(base_def)
+    for key, value in override_def.items():
+        if key == "protocol_overrides":
+            merged_protocol = dict(merged.get("protocol_overrides", {}))
+            if value is not None:
+                merged_protocol.update(dict(value))
+            merged["protocol_overrides"] = merged_protocol
+        else:
+            merged[key] = value
+    return merged
+
+
+def _resolve_case_plan(cfg):
+    exp_cfg = cfg.get("experiment", {})
+    run_cfg = exp_cfg.get("run", {})
+    enabled_cases = run_cfg.get("enabled_cases", list(DEFAULT_CASE_DEFS.keys()))
+    cases_cfg = exp_cfg.get("cases", {})
+
+    plan = []
+    for case_id in enabled_cases:
+        if case_id not in DEFAULT_CASE_DEFS:
+            continue
+        override_def = _to_plain_config(cases_cfg.get(case_id, {})) or {}
+        resolved = _merge_case_def(DEFAULT_CASE_DEFS[case_id], override_def)
+        resolved["id"] = case_id
+        plan.append(resolved)
+    return plan
+
+
+def _get_ccvar_algorithm_param(cfg):
+    algorithm_param = deepcopy(_to_plain_config(cfg.model.get("algorithmParam", {})) or {})
+    algorithm_param.pop("in_idx", None)
+    algorithm_param.pop("out_idx", None)
+    return algorithm_param
 
 
 def _init_case_metrics(case_output_dir: Path, cc_data, T_eval: int):
@@ -38,6 +175,109 @@ def _save_case_metrics(metrics, output_dirs):
         metrics[dim].save_single(n=0)
         metrics[dim].save_full(n=1)
     save_metric_plots(metrics=metrics, output_dirs=output_dirs)
+
+
+def _save_last10pct_error_tables(output_root: Path, case_metric_managers, comparison_cases, cfg):
+    c_data, c_param, c_val, q_hop, k_display, k_suffix = _get_run_parameters(cfg)
+    suffix = _parameter_suffix(c_data, c_param, c_val, q_hop, k_suffix)
+    table_dir = output_root / "comparison_tables"
+    table_dir.mkdir(parents=True, exist_ok=True)
+
+    if not case_metric_managers:
+        return
+    sample_case = next(iter(case_metric_managers.values()))
+    dims = sorted(sample_case.keys())
+
+    for dim in dims:
+        rows = []
+        for metric_name in TV_ERROR_METRICS:
+            vals = []
+            for case_name, _ in comparison_cases:
+                case_mm = case_metric_managers[case_name][dim]
+                vals.append(_mean_last_fraction(case_mm._errors.get(metric_name, []), fraction=0.1))
+            rows.append((metric_name, vals))
+
+        labels = [label for _, label in comparison_cases]
+        col_spec = "c" * len(labels)
+
+        md_lines = [
+            f"# Errors Dim {dim} (Last 10%)",
+            "",
+            f"Parameters: `C_data={c_data}`, `C_param={c_param}`, `c={c_val}`, `Q-hop={q_hop}`, `K={k_display}`",
+            "",
+            "| Metric | " + " | ".join(labels) + " |",
+            "|" + "---|" + "|".join("---:" for _ in labels) + "|",
+        ]
+        for metric_name, vals in rows:
+            formatted = [("nan" if not np.isfinite(v) else f"{v:.6e}") for v in vals]
+            md_lines.append(f"| {metric_name} | " + " | ".join(formatted) + " |")
+
+        md_path = table_dir / f"errors_dim_{dim}_{suffix}.md"
+        with open(md_path, "w", encoding="utf-8") as file:
+            file.write("\n".join(md_lines) + "\n")
+
+        tex_lines = [
+            "\\begin{table}[t]",
+            "\\centering",
+            f"\\caption{{Last 10\\% mean of TV error metrics for dim={dim} ($C_{{data}}={c_data}$, $C_{{param}}={c_param}$, $c={c_val}$, $Q\\text{{-}}hop={q_hop}$, $K={k_display}$).}}",
+            f"\\begin{{tabular}}{{l{col_spec}}}",
+            "\\hline",
+            "Metric & " + " & ".join(labels) + " \\\\",
+            "\\hline",
+        ]
+        for metric_name, vals in rows:
+            formatted = [("nan" if not np.isfinite(v) else f"{v:.6e}") for v in vals]
+            tex_lines.append(f"{metric_name} & " + " & ".join(formatted) + " \\\\")
+        tex_lines.extend(["\\hline", "\\end{tabular}", "\\end{table}"])
+
+        tex_path = table_dir / f"errors_dim_{dim}_{suffix}.tex"
+        with open(tex_path, "w", encoding="utf-8") as file:
+            file.write("\n".join(tex_lines) + "\n")
+
+
+def _save_error_comparison_plots(output_root: Path, case_metric_managers, comparison_cases, cfg):
+    c_data, c_param, c_val, q_hop, k_display, k_suffix = _get_run_parameters(cfg)
+    suffix = _parameter_suffix(c_data, c_param, c_val, q_hop, k_suffix)
+    figure_dir = output_root / "comparison_plots"
+    figure_dir.mkdir(parents=True, exist_ok=True)
+
+    if not case_metric_managers:
+        return
+    sample_case = next(iter(case_metric_managers.values()))
+    dims = sorted(sample_case.keys())
+    annotation_text = f"C_data={c_data}, C_param={c_param}, c={c_val}, Q-hop={q_hop}, K={k_display}"
+
+    for dim in dims:
+        for metric_name in ERROR_METRICS:
+            fig, ax = plt.subplots(figsize=(9, 5))
+            for case_name, label in comparison_cases:
+                series = np.asarray(case_metric_managers[case_name][dim]._errors.get(metric_name, []), dtype=float).reshape(-1)
+                ax.plot(series, linewidth=1.7, label=label)
+
+            ax.set_title(f"{metric_name} (dim={dim})")
+            ax.set_xlabel("t")
+            ax.set_ylabel(metric_name)
+            ax.grid(True, alpha=0.3)
+            ax.legend(loc="best")
+            ax.text(
+                0.02,
+                0.98,
+                annotation_text,
+                transform=ax.transAxes,
+                va="top",
+                ha="left",
+                fontsize=9,
+                bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.8},
+            )
+            fig.tight_layout()
+
+            file_stem = f"errors_dim_{dim}_{metric_name}_{suffix}"
+            pdf_path = figure_dir / f"{file_stem}.pdf"
+            pkl_path = figure_dir / f"{file_stem}.pkl"
+            fig.savefig(pdf_path, format="pdf", bbox_inches="tight")
+            with open(pkl_path, "wb") as file:
+                pickle.dump(fig, file, protocol=pickle.HIGHEST_PROTOCOL)
+            plt.close(fig)
 
 
 def _build_cluster_out_idx_from_nin(clusters, cc_data):
@@ -66,13 +306,11 @@ def _project_global_prediction_to_cluster_nin(global_prediction, cluster_out_glo
     return prediction_by_cluster
 
 
-def _create_pure_local_ccvar_states(cc_data, clusters):
+def _create_pure_local_ccvar_states(cfg, cc_data, clusters):
     T = None
     state_by_cluster = {}
     cluster_out_global_idx = {}
-    model_cfg_path = Path(__file__).resolve().parents[1] / "conf" / "model" / "ccvar.yaml"
-    model_cfg = OmegaConf.load(model_cfg_path)
-    algorithm_param = OmegaConf.to_container(model_cfg.algorithmParam, resolve=True)
+    algorithm_param = _get_ccvar_algorithm_param(cfg)
 
     for cluster_head in sorted(clusters.Nin.keys()):
         nin_idx = {}
@@ -164,12 +402,11 @@ def _run_distributed_forecast_case(
         pending_prediction_by_cluster = prediction_by_cluster
 
     _save_case_metrics(metrics=metrics, output_dirs=output_dirs)
+    return metrics
 
 
-def _run_global_ccvar_forecast_case(case_name: str, case_output_dir: Path, cc_data, cellular_complex, clusters):
-    model_cfg_path = Path(__file__).resolve().parents[1] / "conf" / "model" / "ccvar.yaml"
-    model_cfg = OmegaConf.load(model_cfg_path)
-    algorithm_param = OmegaConf.to_container(model_cfg.algorithmParam, resolve=True)
+def _run_global_ccvar_forecast_case(case_name: str, case_output_dir: Path, cc_data, cellular_complex, clusters, cfg):
+    algorithm_param = _get_ccvar_algorithm_param(cfg)
     global_ccvar = CCVAR(algorithmParam=algorithm_param, cellularComplex=cellular_complex)
 
     T = min(cc_data[dim].shape[1] for dim in cc_data)
@@ -198,6 +435,7 @@ def _run_global_ccvar_forecast_case(case_name: str, case_output_dir: Path, cc_da
         )
 
     _save_case_metrics(metrics=metrics, output_dirs=output_dirs)
+    return metrics
 
 
 def _run_pure_local_ccvar_forecast_case(
@@ -232,6 +470,7 @@ def _run_pure_local_ccvar_forecast_case(
         pending_prediction_by_cluster = prediction_by_cluster
 
     _save_case_metrics(metrics=metrics, output_dirs=output_dirs)
+    return metrics
 
 
 @hydra.main(version_base=None, config_path="../conf", config_name="config.yaml")
@@ -241,64 +480,77 @@ def main(cfg: DictConfig):
     cc_data, cellular_complex = load_data(cfg.dataset)
     output_root = (Path.cwd() / "outputs" / cfg.dataset.dataset_name / "error_comparison").resolve()
     output_root.mkdir(parents=True, exist_ok=True)
+    case_metric_managers = {}
+    comparison_cases = []
 
     clusters = instantiate(config=cfg.clustering, cellularComplex=cellular_complex)
+    case_plan = _resolve_case_plan(cfg)
 
-    case_name = "Global CC-VAR (Direct CCVAR)"
-    _run_global_ccvar_forecast_case(
-        case_name=case_name,
-        case_output_dir=output_root / _slugify_case_name(case_name),
-        cc_data=cc_data,
-        cellular_complex=cellular_complex,
-        clusters=clusters,
-    )
+    pure_local_state_cache = None
+    for case_def in case_plan:
+        case_name = case_def.get("name", case_def["id"])
+        case_label = case_def.get("label", case_name)
+        runner = case_def.get("runner", "")
+        case_output_dir = output_root / _slugify_case_name(case_name)
 
-    pure_local_states, pure_local_out_idx, T_pure_local = _create_pure_local_ccvar_states(
-        cc_data=cc_data,
-        clusters=clusters,
-    )
-    case_name = "Pure Local CC-VAR (Nin Open, No Comm)"
-    _run_pure_local_ccvar_forecast_case(
-        case_name=case_name,
-        case_output_dir=output_root / _slugify_case_name(case_name),
-        state_by_cluster=pure_local_states,
-        cluster_out_global_idx=pure_local_out_idx,
-        cc_data=cc_data,
-        T=T_pure_local,
-    )
+        if runner == "global_direct":
+            case_metric_managers[case_name] = _run_global_ccvar_forecast_case(
+                case_name=case_name,
+                case_output_dir=case_output_dir,
+                cc_data=cc_data,
+                cellular_complex=cellular_complex,
+                clusters=clusters,
+                cfg=cfg,
+            )
+        elif runner == "pure_local_direct":
+            if pure_local_state_cache is None:
+                pure_local_state_cache = _create_pure_local_ccvar_states(
+                    cfg=cfg,
+                    cc_data=cc_data,
+                    clusters=clusters,
+                )
+            pure_local_states, pure_local_out_idx, T_pure_local = pure_local_state_cache
+            case_metric_managers[case_name] = _run_pure_local_ccvar_forecast_case(
+                case_name=case_name,
+                case_output_dir=case_output_dir,
+                state_by_cluster=pure_local_states,
+                cluster_out_global_idx=pure_local_out_idx,
+                cc_data=cc_data,
+                T=T_pure_local,
+            )
+        elif runner == "distributed":
+            agents, out_idx, T_case = create_cluster_agents(
+                cfg=deepcopy(cfg),
+                cc_data=cc_data,
+                clusters=clusters,
+                force_in_equals_out=bool(case_def.get("force_in_equals_out", False)),
+                protocol_overrides=case_def.get("protocol_overrides", {}),
+            )
+            case_metric_managers[case_name] = _run_distributed_forecast_case(
+                case_name=case_name,
+                case_output_dir=case_output_dir,
+                agent_list=agents,
+                cluster_out_global_idx=out_idx,
+                cc_data=cc_data,
+                T=T_case,
+                consensus_mode=case_def.get("consensus_mode", "gated"),
+            )
+        else:
+            continue
 
-    param_only_agents, param_only_out_idx, T_param_only = create_cluster_agents(
-        cfg=deepcopy(cfg),
-        cc_data=cc_data,
-        clusters=clusters,
-        force_in_equals_out=True,
-        protocol_overrides={"C_data": int(1e9)},
-    )
-    case_name = "Parameter-Only CC-VAR"
-    _run_distributed_forecast_case(
-        case_name=case_name,
-        case_output_dir=output_root / _slugify_case_name(case_name),
-        agent_list=param_only_agents,
-        cluster_out_global_idx=param_only_out_idx,
-        cc_data=cc_data,
-        T=T_param_only,
-        consensus_mode="gated",
-    )
+        comparison_cases.append((case_name, case_label))
 
-    current_agents, current_out_idx, T_current = create_cluster_agents(
-        cfg=deepcopy(cfg),
-        cc_data=cc_data,
-        clusters=clusters,
+    _save_last10pct_error_tables(
+        output_root=output_root,
+        case_metric_managers=case_metric_managers,
+        comparison_cases=comparison_cases,
+        cfg=cfg,
     )
-    case_name = "Parameter + Dataset CC-VAR (Gated)"
-    _run_distributed_forecast_case(
-        case_name=case_name,
-        case_output_dir=output_root / _slugify_case_name(case_name),
-        agent_list=current_agents,
-        cluster_out_global_idx=current_out_idx,
-        cc_data=cc_data,
-        T=T_current,
-        consensus_mode="gated",
+    _save_error_comparison_plots(
+        output_root=output_root,
+        case_metric_managers=case_metric_managers,
+        comparison_cases=comparison_cases,
+        cfg=cfg,
     )
 
     print(f"Forecast error comparison completed. Outputs saved under: {output_root}")
