@@ -199,7 +199,7 @@ class CCVARPartialModel(BaseModel):
         initial_params = np.vstack(initial_params)
 
         super().__init__(initial_params=initial_params, algorithm=algorithm)
-        self._param_slices = []
+        self._param_slices = dict()
         self._param_length = 0
         self._eta = dict()
 
@@ -227,7 +227,7 @@ class CCVARPartialModel(BaseModel):
             except:
                 first_index = self._param_length
                 last_index = first_index + curr_grad.shape[0]
-                self._param_slices.append(slice(first_index, last_index))
+                self._param_slices[key] = slice(first_index, last_index)
                 self._param_length += curr_grad.shape[0]
 
             # NEW (MATLAB Equivalent):

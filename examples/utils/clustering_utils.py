@@ -7,6 +7,33 @@ from src.core import BaseAgent
 from examples.utils.data_utils import build_partial_indices
 
 
+def _slice_cellular_complex_by_positions(cellular_complex, positions_by_dim):
+    sliced = {}
+    if 1 in cellular_complex:
+        row_pos = positions_by_dim.get(0, list(range(cellular_complex[1].shape[0])))
+        col_pos = positions_by_dim.get(1, list(range(cellular_complex[1].shape[1])))
+        sliced[1] = cellular_complex[1][np.ix_(row_pos, col_pos)]
+    if 2 in cellular_complex:
+        row_pos = positions_by_dim.get(1, list(range(cellular_complex[2].shape[0])))
+        col_pos = positions_by_dim.get(2, list(range(cellular_complex[2].shape[1])))
+        sliced[2] = cellular_complex[2][np.ix_(row_pos, col_pos)]
+    return sliced
+
+
+def _filter_neighbor_dim_map_by_global_idx(neighbor_dim_map, allowed_global_idx_by_dim):
+    filtered = {}
+    for neighbor_id, dim_map in neighbor_dim_map.items():
+        kept_dim_map = {}
+        for dim, idx_list in dim_map.items():
+            allowed = set(allowed_global_idx_by_dim.get(dim, []))
+            kept = [gidx for gidx in idx_list if gidx in allowed]
+            if kept:
+                kept_dim_map[dim] = kept
+        if kept_dim_map:
+            filtered[neighbor_id] = kept_dim_map
+    return filtered
+
+
 def create_cluster_agents(
     cfg,
     cc_data,
@@ -25,7 +52,8 @@ def create_cluster_agents(
 
     for cluster_head in clusters.clustered_complexes:
         processed_data = {}
-        global_idx = clusters.global_to_local_idx[cluster_head]
+        global_idx = deepcopy(clusters.global_to_local_idx[cluster_head])
+        model_cellular_complex = clusters.clustered_complexes[cluster_head]
 
         for dim in cc_data:
             processed_data[dim] = cc_data[dim][global_idx[dim], :]
@@ -62,22 +90,55 @@ def create_cluster_agents(
         )
         source_out_positions = deepcopy(out_idx)
         if force_in_equals_out:
-            in_idx = deepcopy(source_out_positions)
-            out_idx = {dim: list(range(len(source_out_positions[dim]))) for dim in source_out_positions}
+            compact_global_idx = {}
+            compact_processed_data = {}
+            compact_pos_idx = {}
+            for dim in global_idx:
+                selected_pos = source_out_positions.get(dim, [])
+                compact_global_idx[dim] = [global_idx[dim][i] for i in selected_pos]
+                if dim in processed_data.keys():
+                    compact_processed_data[dim] = processed_data[dim][selected_pos, :]
+                compact_pos_idx[dim] = list(range(len(selected_pos)))
+
+            global_idx = compact_global_idx
+            processed_data = compact_processed_data
+            in_idx = compact_pos_idx
+            out_idx = compact_pos_idx
+            model_cellular_complex = _slice_cellular_complex_by_positions(
+                cellular_complex=clusters.clustered_complexes[cluster_head],
+                positions_by_dim=source_out_positions,
+            )
+
+            interface = _filter_neighbor_dim_map_by_global_idx(
+                neighbor_dim_map=interface,
+                allowed_global_idx_by_dim=global_idx,
+            )
+            Nout = _filter_neighbor_dim_map_by_global_idx(
+                neighbor_dim_map=Nout,
+                allowed_global_idx_by_dim=global_idx,
+            )
+            Nex = _filter_neighbor_dim_map_by_global_idx(
+                neighbor_dim_map=Nex,
+                allowed_global_idx_by_dim=global_idx,
+            )
+
         cluster_out_global_idx[cluster_head] = {}
         for dim in global_idx:
-            map_positions = source_out_positions[dim] if force_in_equals_out else out_idx[dim]
-            cluster_out_global_idx[cluster_head][dim] = np.asarray(
-                [global_idx[dim][i] for i in map_positions],
-                dtype=int,
-            )
+            if force_in_equals_out:
+                cluster_out_global_idx[cluster_head][dim] = np.asarray(global_idx[dim], dtype=int)
+            else:
+                map_positions = out_idx[dim]
+                cluster_out_global_idx[cluster_head][dim] = np.asarray(
+                    [global_idx[dim][i] for i in map_positions],
+                    dtype=int,
+                )
 
         model_cfg.algorithmParam.in_idx = in_idx
         model_cfg.algorithmParam.out_idx = out_idx
 
         ccvarmodel = instantiate(
             model_cfg,
-            cellularComplex=clusters.clustered_complexes[cluster_head],
+            cellularComplex=model_cellular_complex,
         )
         ccdata = instantiate(
             cfg.ccdata,
@@ -115,7 +176,7 @@ def create_cluster_agents(
             mix=mixing,
             imputer=imputer,
             neighbors=set(neighbors),
-            cellularComplex=clusters.clustered_complexes[cluster_head],
+            cellularComplex=model_cellular_complex,
         )
         agent_list[cluster_head] = currAgent
 

@@ -331,15 +331,18 @@ def _create_pure_local_ccvar_states(cfg, cc_data, clusters):
     for cluster_head in sorted(clusters.Nin.keys()):
         nin_idx = {}
         processed_data = {}
-        for dim in sorted(cc_data.keys()):
+        for dim in sorted(clusters.Nin[cluster_head].keys()):
             nin_idx[dim] = sorted(list(clusters.Nin[cluster_head].get(dim, [])))
-            processed_data[dim] = cc_data[dim][nin_idx[dim], :]
+            if dim in cc_data.keys():
+                processed_data[dim] = cc_data[dim][nin_idx[dim], :]
 
         local_complex = {}
+        # try:
         if 1 in clusters.cellularComplex:
             local_complex[1] = clusters.cellularComplex[1][np.ix_(nin_idx[0], nin_idx[1])]
         if 2 in clusters.cellularComplex:
             local_complex[2] = clusters.cellularComplex[2][np.ix_(nin_idx[1], nin_idx[2])]
+        # except: import pdb; pdb.set_trace()
 
         state_by_cluster[cluster_head] = {
             "model": CCVAR(algorithmParam=algorithm_param, cellularComplex=local_complex),

@@ -18,20 +18,29 @@ def load_data(datasetParams):
         print("Error: Data files not found. Check paths.")
         exit()
 
-    signal_node = m["l"].T.astype(float)
+    try: signal_node = m["l"].T.astype(float)
+    except: signal_node = None
     signal_edge = m["s"].T.astype(float)
-    signal_poly = m["u"].T.astype(float)
-
+    try: signal_poly = m["u"].T.astype(float)
+    except: signal_poly = None
+    cc_data = dict()
     # Center data so NMSE scale is comparable across runs.
-    signal_node -= np.mean(signal_node)
+    if signal_node is not None:
+        signal_node -= np.mean(signal_node)
+        cc_data[0] = signal_node
     signal_edge -= np.mean(signal_edge)
-    signal_poly -= np.mean(signal_poly)
+    cc_data[1] = signal_edge
+    if signal_poly is not None:
+        signal_poly -= np.mean(signal_poly)
+        cc_data[2] = signal_poly
+    
+    # cc_data = {
+    #     0: signal_node,
+    #     1: signal_edge,
+    #     2: signal_poly,
+    # }
 
-    cc_data = {
-        0: signal_node,
-        1: signal_edge,
-        2: signal_poly,
-    }
+    # import pdb; pdb.set_trace()
 
     cellularComplex = {
         1: topology["B1"].astype(float),
