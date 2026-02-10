@@ -1,0 +1,8 @@
+defaults:
+  - ccvar_common
+  - _self_
+
+_target_: src.implementations.models.ccvar.CCVARPartialInModel
+algorithmParam:
+  in_idx: {}
+  out_idx: {}

@@ -282,6 +282,33 @@ class CCVARPartial(CCVAR):
         self._out_idx = algorithmParam['out_idx']
         
 
+class CCVARPartialIn(CCVARPartial):
+    def forecast(self, steps=1):
+        """
+        Forecast on the full in_idx state for each enabled dimension.
+        Returns predictions with shape (Nin, steps), without projecting to out_idx.
+        """
+        const_obj = copy.deepcopy(self)
+        preds = {k: np.zeros((const_obj._Nin[k], steps)) for k in self._data_keys}
+
+        for s in range(steps):
+            feats = const_obj._in_in_feature_gen()
+
+            for k in self._data_keys:
+                if const_obj._theta[k] is None:
+                    continue
+
+                curr_preds = (feats[k] @ const_obj._theta[k]).flatten()
+                preds[k][:, s] = curr_preds
+
+                if s < steps - 1:
+                    old_data = const_obj._data[k][:, 1:]
+                    new_col = curr_preds.reshape(-1, 1)
+                    const_obj._data[k] = np.hstack([old_data, new_col])
+
+        return preds
+
+
 class CCVARPartialModel(BaseModel):
     def __init__(self, algorithmParam, cellularComplex):
         ccvarParams = (algorithmParam, cellularComplex)
@@ -375,6 +402,21 @@ class CCVARPartialModel(BaseModel):
 
     def estimate(self, input_data, **kwargs):
         return self._algorithm.forecast(steps=kwargs.get("steps", 1))
+
+
+class CCVARPartialInModel(CCVARPartialModel):
+    def __init__(self, algorithmParam, cellularComplex):
+        ccvarParams = (algorithmParam, cellularComplex)
+        algorithm = CCVARPartialIn(*ccvarParams)
+        initial_params = []
+        for key in algorithm._data_keys:
+            initial_params.append(algorithm._theta[key])
+        initial_params = np.vstack(initial_params)
+
+        BaseModel.__init__(self, initial_params=initial_params, algorithm=algorithm)
+        self._param_slices = dict()
+        self._param_length = 0
+        self._eta = dict()
 
 
 class CCVARModel(BaseModel):
