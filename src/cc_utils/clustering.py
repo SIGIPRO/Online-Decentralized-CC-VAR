@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Iterable, Optional, Tuple, Any, Set, TypeVar, List
 from collections.abc import Hashable
 from itertools import combinations
-import itertools
+# import itertools
 import numpy as np
 from numpy.linalg import matrix_power
 import networkx as nx
