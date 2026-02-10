@@ -7,7 +7,7 @@ import itertools
 import numpy as np
 from numpy.linalg import matrix_power
 import networkx as nx
-from copy import copy
+from copy import copy, deepcopy
 import matplotlib.pyplot as plt
 from scipy.io import loadmat
 
@@ -66,6 +66,7 @@ class ModularityBasedClustering:
 
         assert bool(self.Nin) and bool(self.interface) and bool(self.adjacency_trees), "Run plot_clusters after clusters are handled!!!"
         assert max(self.cellularComplex.keys()) < 3, "Only cellular complexes with maximum dimension 2 can be drawn!!!"
+        show_plots = bool(self.clusteringParameters.get("show_plots", False))
      
         path = self.clusteringParameters.get('position_path', None)
         
@@ -76,11 +77,23 @@ class ModularityBasedClustering:
             coords = positions.get(self.clusteringParameters['position_name'], np.empty(shape = (), dtype = np.bool))
             coords = {i: (float(coords[i, 0]), float(coords[i, 1])) for i in range(coords.shape[0])}
         except:
-            coords = nx.spring_layout
+            coords = None
         
         heads = list(self.Nin.keys())
-        cmap = plt.get_cmap("tab20" if len(heads) > 9 else "tab10")
-        colors = [cmap(i) for i in np.linspace(0, 1, max(len(heads) + 1, 1))]
+        # Colorblind-safe palette for agents + dedicated interface color.
+        base_agent_colors = [
+            "#4E79A7",  # blue
+            "#F28E2B",  # orange
+            "#59A14F",  # green
+            "#B07AA1",  # purple
+            "#EDC948",  # yellow
+            "#9C755F",  # brown
+            "#E15759",  # red (replaces low-contrast gray)
+        ]
+        interface_color = "#17BECF"  # cyan
+        colors = {}
+        for i, head in enumerate(heads):
+            colors[head] = base_agent_colors[i % len(base_agent_colors)]
         # plt.figure()
         # for head in heads:
         #     self.__plot_graphs(head = head, coords = coords)
@@ -91,7 +104,9 @@ class ModularityBasedClustering:
         for edge in range(num_edges):
             current_edge = tuple(self.adjacency_trees[1][edge][0])
             G.add_edge(*current_edge)
-        plt.figure()
+        if not isinstance(coords, dict):
+            coords = nx.spring_layout(G, seed=1)
+        fig = plt.figure(figsize=(7.61, 6.65), dpi=100)
         ax = plt.gca()
         for head in heads:
             edge_list = []
@@ -111,12 +126,26 @@ class ModularityBasedClustering:
             edge_list = list(set(edge_list))
 
             color = colors[head]
-            color_list = [list(color)[i]/1.5 for i in range(3)]
-            color_list.append(list(color)[-1])
 
             
-            nx.draw_networkx_nodes(G, coords, nodelist = node_list, node_color = [color], ax = ax, node_size=50)
-            nx.draw_networkx_edges(G, coords, edgelist = edge_list, edge_color = color_list, ax = ax, width = 3.0)
+            nx.draw_networkx_nodes(
+                G,
+                coords,
+                nodelist=node_list,
+                node_color=[color],
+                ax=ax,
+                node_size=50,
+                hide_ticks=False,
+            )
+            nx.draw_networkx_edges(
+                G,
+                coords,
+                edgelist=edge_list,
+                edge_color=color,
+                ax=ax,
+                width=3.0,
+                hide_ticks=False,
+            )
 
         
 
@@ -130,9 +159,7 @@ class ModularityBasedClustering:
         for head in heads:
             # head = heads[i]
             color = colors[head]
-            
-            color_list = [list(color)[i]/2 for i in range(3)]
-            color_list.append(0.5)
+            rgba = tuple(list(plt.matplotlib.colors.to_rgba(color)[:3]) + [0.45])
             
             for cell in self.Nin[head][2]:
                 nodes = self.adjacency_trees[2][cell][0]
@@ -144,43 +171,157 @@ class ModularityBasedClustering:
 
                 # import pdb; pdb.set_trace()
 
-                plt.fill(cell_x, cell_y, color = color_list, zorder = 0)
+                plt.fill(cell_x, cell_y, color = rgba, zorder = 0)
 
         interface_nodes = set()
         # interface_cells = set()
-        color = colors[-1]
-            
-        color_list = [list(color)[i]/2 for i in range(3)]
-        color_list.append(0.5)
+        interface_fill = tuple(list(plt.matplotlib.colors.to_rgba(interface_color)[:3]) + [0.5])
         for h in self.interface:
             interface_nodes |= set(self.interface[h][0])
             curr_cells = self.interface[h][2]
-            color = colors[-1]
-            
-            color_list = [list(color)[i]/2 for i in range(3)]
-            color_list.append(0.5)
             for cell in curr_cells:
                 nodes = nodes = self.adjacency_trees[2][cell][0]
                 nodes = order_nodes_cw(nodes, coords)
                 cell_x = np.array([coords[nodes[i]][0] for i in range(len(nodes))])
                 cell_y = np.array([coords[nodes[i]][1] for i in range(len(nodes))])
-                plt.fill(cell_x, cell_y, facecolor = color_list, edgecolor = (0,0,0,0), linewidth = 3.0, zorder = 0)
+                plt.fill(cell_x, cell_y, facecolor = interface_fill, edgecolor = (0,0,0,0), linewidth = 3.0, zorder = 0)
 
 
             # interface_cells |= set(self.interface[h][2])
         
-        nx.draw_networkx_nodes(G, coords, nodelist = interface_nodes, node_color = [colors[-1]], ax = ax, node_size=50)
+        nx.draw_networkx_nodes(
+            G,
+            coords,
+            nodelist=interface_nodes,
+            node_color=[interface_color],
+            edgecolors="#1F2937",
+            linewidths=0.7,
+            ax=ax,
+            node_size=50,
+            hide_ticks=False,
+        )
 
-        plt.tight_layout()
         ax = plt.gca()
-        ax.set_axis_off()  # hides spines, ticks, labels
-        # or:
+        # Tight limits so the complex occupies the plotting area.
+        coord_array = np.array(list(coords.values()), dtype=float)
+        x_min, y_min = np.min(coord_array, axis=0)
+        x_max, y_max = np.max(coord_array, axis=0)
+        x_range = max(x_max - x_min, 1e-12)
+        y_range = max(y_max - y_min, 1e-12)
+        x_pad = 0.02 * x_range
+        y_pad = 0.02 * y_range
+        ax.set_xlim(x_min - x_pad, x_max + x_pad)
+        ax.set_ylim(y_min - y_pad, y_max + y_pad)
+
+        # Use "nice" geographic ticks like the base cellular-complex plot.
+        x_tick_step = 10.0
+        y_tick_step = 5.0
+        x_tick_start = np.floor(x_min / x_tick_step) * x_tick_step
+        x_tick_end = np.ceil(x_max / x_tick_step) * x_tick_step
+        y_tick_start = np.floor(y_min / y_tick_step) * y_tick_step
+        y_tick_end = np.ceil(y_max / y_tick_step) * y_tick_step
+
+        # Avoid far-away end ticks (e.g., 60 when max longitude is ~53),
+        # but keep close boundary ticks (e.g., 20 and -15).
+        if (x_tick_end - x_max) > (0.6 * x_tick_step):
+            x_tick_end -= x_tick_step
+        if (y_tick_end - y_max) > (0.6 * y_tick_step):
+            y_tick_end -= y_tick_step
+
+        if x_tick_start <= x_tick_end:
+            ax.set_xticks(np.arange(x_tick_start, x_tick_end + 0.5 * x_tick_step, x_tick_step))
+        if y_tick_start <= y_tick_end:
+            ax.set_yticks(np.arange(y_tick_start, y_tick_end + 0.5 * y_tick_step, y_tick_step))
+        # MATLAB-like styling requested by user.
+        ax.set_xlabel("Longitude", fontsize=40, fontname="Helvetica", labelpad=10)
+        ax.set_ylabel("Latitude", fontsize=40, fontname="Helvetica", labelpad=10)
+        ax.tick_params(axis="both", labelsize=25)
+        for tick in ax.get_xticklabels() + ax.get_yticklabels():
+            tick.set_fontname("Helvetica")
+        ax.set_aspect("equal", adjustable="box")
         for spine in ax.spines.values():
+            spine.set_visible(True)
+            spine.set_linewidth(1.0)
+        ax.grid(False)
+        fig.subplots_adjust(left=0.18, bottom=0.18, right=0.99, top=0.99)
+        plt.savefig("clusters.pdf", format="pdf")
+        if show_plots:
+            plt.show()
+        else:
+            plt.close(fig)
+
+        # Plot agent communication graph with cluster-consistent colors.
+        G_agents = nx.Graph()
+        for head in heads:
+            G_agents.add_node(head)
+        for head in self.agent_graph:
+            for neighbor in self.agent_graph[head]:
+                G_agents.add_edge(head, neighbor)
+
+        # Place each agent near the centroid of its cluster nodes on the map.
+        agent_pos = {}
+        for head in heads:
+            cluster_nodes = self.Nin.get(head, {}).get(0, [])
+            cluster_nodes = list(cluster_nodes) if cluster_nodes is not None else []
+            if len(cluster_nodes) > 0:
+                pts = np.array([coords[n] for n in cluster_nodes if n in coords], dtype=float)
+                if pts.size > 0:
+                    centroid = np.mean(pts, axis=0)
+                    agent_pos[head] = (float(centroid[0]), float(centroid[1]))
+
+        # Fallback if a centroid could not be formed for some heads.
+        if len(agent_pos) != len(heads):
+            spring_pos = nx.spring_layout(G_agents, seed=1)
+            for head in heads:
+                if head not in agent_pos:
+                    agent_pos[head] = spring_pos[head]
+
+        fig_agents = plt.figure(figsize=(7.61, 6.65), dpi=100)
+        ax_agents = plt.gca()
+        nx.draw_networkx_edges(
+            G_agents,
+            pos=agent_pos,
+            edge_color=interface_color,
+            width=7.0,
+            ax=ax_agents,
+            hide_ticks=False,
+        )
+        nx.draw_networkx_nodes(
+            G_agents,
+            pos=agent_pos,
+            nodelist=heads,
+            node_color=[colors[h] for h in heads],
+            node_size=1200,
+            edgecolors="#040404",
+            linewidths=3,
+            ax=ax_agents,
+            hide_ticks=False,
+        )
+        # Keep agent graph visually clean: no node text labels and no axis labels.
+        ax_agents.set_xticks([])
+        ax_agents.set_yticks([])
+        # Center using bounding-box center with square span for stable framing.
+        agent_xy = np.array([agent_pos[h] for h in heads], dtype=float)
+        x_min_a, y_min_a = np.min(agent_xy, axis=0)
+        x_max_a, y_max_a = np.max(agent_xy, axis=0)
+        cx = 0.5 * (x_min_a + x_max_a)
+        cy = 0.5 * (y_min_a + y_max_a)
+        span = max(x_max_a - x_min_a, y_max_a - y_min_a, 1e-6) * 1.12
+        half = 0.5 * span
+        ax_agents.set_xlim(cx - half, cx + half)
+        ax_agents.set_ylim(cy - half, cy + half)
+        ax_agents.set_aspect("equal", adjustable="box")
+        ax_agents.set_anchor("C")
+        for spine in ax_agents.spines.values():
             spine.set_visible(False)
-        ax.set_xticks([])
-        ax.set_yticks([])
-        plt.savefig("clusters.pdf", format="pdf", bbox_inches="tight")
-        plt.show()
+        ax_agents.set_frame_on(False)
+        ax_agents.grid(False)
+        fig_agents.subplots_adjust(left=0.02, bottom=0.02, right=0.98, top=0.98)
+        plt.savefig("agent_graph.pdf", format="pdf")
+        if show_plots:
+            plt.show()
+        else:
+            plt.close(fig_agents)
 
 
     def __post_init__(self):
@@ -242,6 +383,9 @@ class ModularityBasedClustering:
                     self.Nin[cluster_idx][dim] |= set(self.adjacency_trees[requested_dim][cell][dim])
 
         cluster_id = list(self.Nin.keys())
+        # Snapshot ownership before pairwise interface subtraction to avoid
+        # order-dependent interface removal across cluster pairs.
+        nin_snapshot = deepcopy(self.Nin)
         
 
         for c1,c2 in combinations(cluster_id, 2):
@@ -280,7 +424,7 @@ class ModularityBasedClustering:
 
                 ## INTERFACE BLOCK
 
-                self.interface[ott][dim] = set(self.Nin[c1][dim] & self.Nin[c2][dim])
+                self.interface[ott][dim] = set(nin_snapshot[c1][dim] & nin_snapshot[c2][dim])
 
                 ott_connection = ott_connection or bool(self.interface[ott][dim])
 
