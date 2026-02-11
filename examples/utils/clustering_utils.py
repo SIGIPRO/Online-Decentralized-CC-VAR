@@ -2,6 +2,7 @@ from copy import deepcopy
 
 import numpy as np
 from hydra.utils import instantiate
+from tqdm import tqdm  # type: ignore[import-untyped]
 
 from src.core import BaseAgent
 from examples.utils.data_utils import build_partial_indices
@@ -41,6 +42,7 @@ def create_cluster_agents(
     force_in_equals_out=False,
     protocol_overrides=None,
     disable_neighbors=False,
+    show_progress=True,
 ):
     T = None
     agent_list = {}
@@ -50,7 +52,12 @@ def create_cluster_agents(
         for cluster_id, neighbors in clusters.agent_graph.items()
     }
 
-    for cluster_head in clusters.clustered_complexes:
+    cluster_heads = list(clusters.clustered_complexes.keys())
+    iterator = cluster_heads
+    if show_progress:
+        iterator = tqdm(cluster_heads, desc="Creating agents", leave=False)
+
+    for cluster_head in iterator:
         processed_data = {}
         global_idx = deepcopy(clusters.global_to_local_idx[cluster_head])
         model_cellular_complex = clusters.clustered_complexes[cluster_head]

@@ -1,0 +1,77 @@
+run:
+  enabled_cases:
+    - topolms_atc
+    - ccvar_kgt
+  forecast_horizon: 1
+
+cases:
+  topolms_atc:
+    name: "TopoLMS + Diffusion ATC"
+    label: "TopoLMS (ATC)"
+    consensus_mode: gated
+    protocol_overrides:
+      C_data: 1
+      C_param: 1
+    clustering:
+      _target_: src.cc_utils.clustering.OnlyEdgesClustering
+      clusteringParameters: {}
+    model:
+      _target_: src.implementations.models.topolms.topoLMSPartialModel
+      _convert_: partial
+      algorithmParam:
+        signal_key: 1
+        M: 2
+        P: 2
+        T: 1
+        in_idx: {}
+        out_idx: {}
+    mixing:
+      _target_: src.implementations.mixing.diffusion_atc.DiffusionATCModel
+      _convert_: all
+      initial_aux_vars: {}
+      eta: {}
+
+  ccvar_kgt:
+    name: "CCVARPartialEdge + KGT"
+    label: "CC-VAR (KGT)"
+    consensus_mode: gated
+    protocol_overrides:
+      C_data: 1
+      C_param: 1
+    clustering:
+      _target_: src.cc_utils.clustering.OnlyEdgesClustering
+      clusteringParameters: {}
+    model:
+      _target_: src.implementations.models.ccvar.CCVARPartialEdgeModel
+      _convert_: partial
+      algorithmParam:
+        Tstep: 1
+        P: 2
+        K:
+          - 2
+          - [2, 2]
+          - 2
+        mu:
+          - 0
+          - [0, 0]
+          - 0
+        lambda: 0.01
+        gamma: 0.98
+        enabler:
+          - false
+          - true
+          - false
+        LassoEn: false
+        FeatureNormalzn: false
+        BiasEn: true
+        in_idx: {}
+        out_idx: {}
+    mixing:
+      _target_: src.implementations.mixing.kgt.KGTMixingModel
+      _convert_: all
+      eta:
+        K: 1
+        c: 1
+        s: 1
+      initial_aux_vars:
+        correction: 0

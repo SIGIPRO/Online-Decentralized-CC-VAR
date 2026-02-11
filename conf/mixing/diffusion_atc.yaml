@@ -1,0 +1,4 @@
+_target_: src.implementations.mixing.diffusion_atc.DiffusionATCModel
+_convert_: all
+initial_aux_vars: {}
+eta: {}
