@@ -16,7 +16,7 @@ cases:
       _target_: src.cc_utils.clustering.OnlyEdgesClustering
       clusteringParameters: {}
     model:
-      _target_: src.implementations.models.topolms.topoLMSPartialModel
+      _target_: src.implementations.models.topolms.topoLMSPartialEdgeModel
       _convert_: partial
       algorithmParam:
         signal_key: 1

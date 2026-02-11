@@ -84,9 +84,9 @@ class OnlyEdgesClustering:
             }
             self.clustered_complexes[h] = {}
             if B1 is not None:
-                self.clustered_complexes[h][1] = B1.copy()
+                self.clustered_complexes[h][1] = B1
             if B2 is not None:
-                self.clustered_complexes[h][2] = B2.copy()
+                self.clustered_complexes[h][2] = B2
 
 @dataclass
 class ModularityBasedClustering:

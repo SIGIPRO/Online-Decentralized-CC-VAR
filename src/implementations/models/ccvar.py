@@ -310,20 +310,213 @@ class CCVARPartialIn(CCVARPartial):
 
 
 class CCVARPartialEdge(CCVARPartial):
+    _shared_signature = None
+    _shared_features = None
+    _shared_Rk = None
+    _shared_data = None
+    _shared_bias = None
+    _shared_input = None
+    _shared_feature_cache = None
+
+    @classmethod
+    def reset_shared_state(cls):
+        cls._shared_signature = None
+        cls._shared_features = None
+        cls._shared_Rk = None
+        cls._shared_data = None
+        cls._shared_bias = None
+        cls._shared_input = None
+        cls._shared_feature_cache = None
+
+    @classmethod
+    def set_input_data(cls, x_n):
+        x_arr = np.asarray(x_n, dtype=float).reshape(-1)
+        if cls._shared_input is None:
+            cls._shared_input = x_arr
+            return
+        if cls._shared_input.shape != x_arr.shape:
+            raise ValueError(
+                f"Shared edge input shape changed from {cls._shared_input.shape} to {x_arr.shape} in one step."
+            )
+        cls._shared_input = x_arr
+
+    @classmethod
+    def roll_shared_buffer(cls):
+        if cls._shared_input is None or cls._shared_data is None:
+            return
+        data = cls._shared_data[1]
+        old_data = data[:, 1:]
+        new_col = cls._shared_input.reshape(-1, 1)
+        if new_col.shape[0] != old_data.shape[0]:
+            raise ValueError(
+                f"Shared edge input size {new_col.shape[0]} does not match shared buffer rows {old_data.shape[0]}"
+            )
+        cls._shared_data[1] = np.hstack([old_data, new_col])
+        cls._shared_input = None
+        cls._shared_feature_cache = None
+
     def _algorithm_parameter_setup(self, algorithmParam):
         edge_only_params = copy.deepcopy(algorithmParam)
         edge_only_params["enabler"] = [False, True, False]
-        super()._algorithm_parameter_setup(edge_only_params)
+        self._Tstep = edge_only_params.get("Tstep", 1)
+        self._mu = edge_only_params.get("mu", [0, (0, 0), 0])
+        self._lambda = edge_only_params.get("lambda", 0.01)
+        self._LassoEn = edge_only_params.get("LassoEn", 0)
+        self._FeatureNormalzn = edge_only_params.get("FeatureNormalzn", True)
+        self._bias_enabler = edge_only_params.get("BiasEn", True)
+        self._b = edge_only_params.get("b", 1)
+        self._gamma = edge_only_params.get("gamma", 0.98)
+        self._P = edge_only_params.get("P", 2)
+        self._K = edge_only_params.get("K", [2, (2, 2), 2])
+        self._data_enabler = edge_only_params.get("enabler", [False, True, False])
+        self._out_idx_input = copy.deepcopy(edge_only_params.get("out_idx", {}))
+        self._in_idx = {}
+        self._out_idx = {}
+        self._edge_count = 0
 
-        # Keep full in_idx for feature construction, but estimate/update only edges.
-        if 1 not in self._in_idx:
-            self._in_idx[1] = self._out_idx.get(1, [])
-        if 0 not in self._in_idx:
-            self._in_idx[0] = []
-        if 2 not in self._in_idx:
-            self._in_idx[2] = []
-        if 1 not in self._out_idx:
-            self._out_idx[1] = self._in_idx.get(1, [])
+    def _construct_laplacian(self, cellularComplex):
+        self._Nin = {}
+        self._Nout = {}
+        self._in_in_features = {}
+
+        B_down_full = cellularComplex.get(1, None)
+        B_up_full = cellularComplex.get(2, None)
+        if B_down_full is None and B_up_full is None:
+            raise ValueError("CCVARPartialEdge requires at least B1 or B2 for edge topology.")
+
+        if B_down_full is not None:
+            edge_count = int(B_down_full.shape[1])
+        else:
+            edge_count = int(B_up_full.shape[0])
+        self._edge_count = edge_count
+
+        out_idx = self._resolve_out_idx(edge_count=edge_count)
+        self._out_idx = {1: out_idx.tolist()}
+        self._Nin[1] = edge_count
+        self._Nout[1] = int(out_idx.size)
+
+        K_val = self._K[1] if len(self._K) > 1 else (2, 2)
+        K_l = K_val[0] if isinstance(K_val, (list, tuple)) else K_val
+        K_u = K_val[1] if isinstance(K_val, (list, tuple)) else K_val
+
+        mu_val = self._mu[1] if len(self._mu) > 1 else (0, 0)
+        mu_l = mu_val[0] if isinstance(mu_val, (list, tuple)) else mu_val
+        mu_u = mu_val[1] if isinstance(mu_val, (list, tuple)) else mu_val
+
+        signature = (
+            int(edge_count),
+            int(K_l),
+            int(K_u),
+            int(self._P),
+            bool(self._bias_enabler),
+            float(mu_l),
+            float(mu_u),
+            None if B_down_full is None else tuple(B_down_full.shape),
+            None if B_up_full is None else tuple(B_up_full.shape),
+        )
+
+        cls = type(self)
+        if cls._shared_signature != signature:
+            edge_idx = np.arange(edge_count, dtype=int)
+            B_down = None
+            if B_down_full is not None:
+                B_down = B_down_full[:, edge_idx]
+            B_up = None
+            if B_up_full is not None:
+                B_up = B_up_full[np.ix_(edge_idx, np.arange(B_up_full.shape[1]))]
+
+            L_lower = B_down.T @ B_down if B_down is not None else None
+            L_upper = B_up @ B_up.T if B_up is not None else None
+
+            shared_features = {1: {}}
+            feature_dim_accum = 0
+
+            if L_lower is not None:
+                shared_features[1]["sl"] = self._CCVAR__ll_gen(L_lower, K_l)
+                feature_dim_accum += K_l * self._P
+            if L_upper is not None:
+                shared_features[1]["su"] = self._CCVAR__ll_gen(L_upper, K_u)
+                feature_dim_accum += K_u * self._P
+
+            feature_dim_accum += int(self._bias_enabler)
+            shared_features[1]["S_dim"] = feature_dim_accum
+
+            Rk_full = np.eye(edge_count)
+            if L_lower is not None:
+                Rk_full += mu_l * L_lower
+            if L_upper is not None:
+                Rk_full += mu_u * L_upper
+
+            shared_data = {1: np.zeros((edge_count, self._P))}
+            shared_bias = {1: np.ones((edge_count, 1)) if self._bias_enabler else np.empty((edge_count, 0))}
+            shared_Rk = {1: Rk_full}
+
+            cls._shared_signature = signature
+            cls._shared_features = shared_features
+            cls._shared_Rk = shared_Rk
+            cls._shared_data = shared_data
+            cls._shared_bias = shared_bias
+            cls._shared_feature_cache = None
+
+        self._features = cls._shared_features
+        self._Rk = cls._shared_Rk
+        self._data = cls._shared_data
+        self._bias = cls._shared_bias
+
+    def _data_initializer(self):
+        # Shared static data is prepared in _construct_laplacian.
+        self._norm_scale = {1: 0}
+
+    def _resolve_out_idx(self, edge_count):
+        raw_idx = self._out_idx_input
+        if isinstance(raw_idx, dict):
+            if 1 in raw_idx:
+                raw_idx = raw_idx[1]
+            elif len(raw_idx) > 0:
+                raw_idx = next(iter(raw_idx.values()))
+            else:
+                raw_idx = []
+        out_arr = np.asarray(raw_idx, dtype=int).reshape(-1)
+        if out_arr.size == 0:
+            return np.arange(edge_count, dtype=int)
+
+        valid = out_arr[(out_arr >= 0) & (out_arr < edge_count)]
+        if valid.size == 0:
+            return np.arange(edge_count, dtype=int)
+
+        ordered_unique = []
+        seen = set()
+        for idx in valid.tolist():
+            if idx in seen:
+                continue
+            seen.add(idx)
+            ordered_unique.append(int(idx))
+        return np.asarray(ordered_unique, dtype=int)
+
+    def _in_in_feature_gen(self):
+        raise RuntimeError("CCVARPartialEdge does not support in-in features in static edge-only mode.")
+
+    def get_shared_features(self):
+        # Feature normalization mutates per-instance norm state; keep non-cached path there.
+        if self._FeatureNormalzn:
+            return self._feature_gen()
+
+        cls = type(self)
+        if cls._shared_feature_cache is None:
+            cls._shared_feature_cache = self._feature_gen()
+        return cls._shared_feature_cache
+
+    def forecast(self, steps=1):
+        if steps != 1:
+            raise ValueError("CCVARPartialEdge supports only single-step forecasting.")
+
+        key = 1
+        if key not in self._theta or self._theta[key] is None:
+            return {key: np.zeros((self._Nout.get(key, 0),), dtype=float)}
+
+        feats = self.get_shared_features()
+        full_pred = (feats[key] @ self._theta[key]).reshape(-1)
+        return {key: full_pred[np.asarray(self._out_idx[key], dtype=int)]}
 
 
 class CCVARPartialModel(BaseModel):
@@ -449,6 +642,62 @@ class CCVARPartialEdgeModel(CCVARPartialModel):
         self._param_slices = dict()
         self._param_length = 0
         self._eta = dict()
+
+    @classmethod
+    def set_input_data(cls, x_n):
+        CCVARPartialEdge.set_input_data(x_n)
+
+    @classmethod
+    def roll_shared_buffer(cls):
+        CCVARPartialEdge.roll_shared_buffer()
+
+    @classmethod
+    def reset_shared_state(cls):
+        CCVARPartialEdge.reset_shared_state()
+
+    def _resolve_edge_sample(self, aggregated_data):
+        input_data = aggregated_data.get_data()
+        if 1 in input_data:
+            x_raw = np.asarray(input_data[1], dtype=float).reshape(-1)
+        elif len(input_data) == 1:
+            only_key = next(iter(input_data.keys()))
+            x_raw = np.asarray(input_data[only_key], dtype=float).reshape(-1)
+        else:
+            raise KeyError(f"CCVARPartialEdgeModel expected edge signal in keys {list(input_data.keys())}")
+
+        if self._algorithm._edge_count and x_raw.size != self._algorithm._edge_count:
+            raise ValueError(
+                f"CCVARPartialEdgeModel expected edge sample size {self._algorithm._edge_count}, got {x_raw.size}."
+            )
+        return x_raw
+
+    def get_gradient(self, aggregated_data, **kwargs):
+        del kwargs
+        key = 1
+        x_n = self._resolve_edge_sample(aggregated_data=aggregated_data)
+        type(self).set_input_data(x_n)
+
+        features = self._algorithm.get_shared_features()
+        S_full = features[key]
+        out_idx = np.asarray(self._algorithm._out_idx[key], dtype=int)
+        S = S_full[out_idx, :]
+        target = x_n[out_idx].reshape(-1, 1)
+        Rk = self._algorithm._Rk[key][np.ix_(out_idx, out_idx)]
+
+        gamma = self._algorithm._gamma
+        self._algorithm._phi[key] = gamma * self._algorithm._phi[key] + (1 - gamma) * (S.T @ Rk @ S)
+        self._algorithm._r[key] = gamma * self._algorithm._r[key] + (1 - gamma) * (S.T @ target)
+
+        self._eta[key] = self._algorithm._compute_step_size(key)
+        curr_grad = self._algorithm._get_gradient(key).reshape(-1, 1)
+
+        if key not in self._param_slices:
+            first_index = self._param_length
+            last_index = first_index + curr_grad.shape[0]
+            self._param_slices[key] = slice(first_index, last_index)
+            self._param_length += curr_grad.shape[0]
+
+        return curr_grad.flatten()
 
 
 class CCVARModel(BaseModel):

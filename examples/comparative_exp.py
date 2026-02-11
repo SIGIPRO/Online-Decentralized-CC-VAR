@@ -14,6 +14,8 @@ from cellexp_util.registry.metric_registry import ensure_metrics_registered
 from examples.utils.clustering_utils import create_cluster_agents
 from examples.utils.data_utils import load_data
 from examples.utils.metric_utils import evaluate_pending_predictions, init_metric_managers
+from src.cc_utils.ccdata import CellularComplexInMemoryData
+from src.implementations.agent import SnapshotAgent
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -89,6 +91,24 @@ def _run_distributed_edge_case(
     forecast_horizon: int,
 ):
     cc_data_edge = {EDGE_DIM: cc_data[EDGE_DIM]}
+    model_target = str(cfg_case.model.get("_target_", ""))
+    use_static_ccvar = model_target.endswith("CCVARPartialEdgeModel")
+    use_static_topolms = model_target.endswith("topoLMSPartialEdgeModel")
+    use_snapshot_agents = use_static_ccvar or use_static_topolms
+    if use_static_ccvar:
+        from src.implementations.models.ccvar import CCVARPartialEdgeModel
+
+        CCVARPartialEdgeModel.reset_shared_state()
+    if use_static_topolms:
+        from src.implementations.models.topolms import topoLMSPartialEdgeModel
+
+        topoLMSPartialEdgeModel.reset_shared_state()
+
+    shared_snapshot = None
+    if use_snapshot_agents:
+        SnapshotAgent.reset_shared_data_stream()
+        shared_snapshot = CellularComplexInMemoryData(data=cc_data_edge)
+
     clusters = instantiate(config=cfg_case.clustering, cellularComplex=cellular_complex)
     protocol_overrides = case_def.get("protocol_overrides", {})
     consensus_mode = case_def.get("consensus_mode", "gated")
@@ -98,6 +118,8 @@ def _run_distributed_edge_case(
         clusters=clusters,
         force_in_equals_out=False,
         protocol_overrides=protocol_overrides,
+        snapshot_agent=use_snapshot_agents,
+        snapshot_data_stream=shared_snapshot,
     )
     if T <= forecast_horizon:
         raise ValueError(f"{case_def.get('name', 'case')}: need T ({T}) > Tstep ({forecast_horizon}).")
@@ -114,15 +136,20 @@ def _run_distributed_edge_case(
     
     progress_bar = tqdm(range(0, T), desc=case_def.get("name", "Comparative case"))
     for t in progress_bar:
-        for cluster_head in agent_list:
-            agent_list[cluster_head].iterate_data(t)
-            agent_list[cluster_head].send_data(t)
-            data_box = agent_list[cluster_head].outbox["data"]
-            for cluster_id in data_box:
-                agent_list[cluster_id].push_to_inbox(cluster_head, data_box[cluster_id], "data")
+        if use_snapshot_agents:
+            SnapshotAgent.advance_shared_snapshot()
+            for cluster_head in agent_list:
+                agent_list[cluster_head].iterate_data(t)
+        else:
+            for cluster_head in agent_list:
+                agent_list[cluster_head].iterate_data(t)
+                agent_list[cluster_head].send_data(t)
+                data_box = agent_list[cluster_head].outbox["data"]
+                for cluster_id in data_box:
+                    agent_list[cluster_id].push_to_inbox(cluster_head, data_box[cluster_id], "data")
 
-        for cluster_head in agent_list:
-            agent_list[cluster_head].receive_data()
+            for cluster_head in agent_list:
+                agent_list[cluster_head].receive_data()
 
         pending_prediction_by_cluster = pending_prediction_by_eval_t.pop(t, None)
         if pending_prediction_by_cluster is not None:
@@ -138,6 +165,11 @@ def _run_distributed_edge_case(
 
         for cluster_head in agent_list:
             agent_list[cluster_head].local_step()
+
+        if use_static_ccvar and agent_list:
+            model_cls = type(next(iter(agent_list.values()))._model)
+            if hasattr(model_cls, "roll_shared_buffer"):
+                model_cls.roll_shared_buffer()
 
         for cluster_head in agent_list:
             agent_list[cluster_head].prepare_params(t)
@@ -158,6 +190,11 @@ def _run_distributed_edge_case(
                 if has_fresh_neighbor_params[cluster_head]:
                     agent_list[cluster_head].do_consensus()
 
+        if use_static_topolms and agent_list:
+            model_cls = type(next(iter(agent_list.values()))._model)
+            if hasattr(model_cls, "roll_shared_buffer"):
+                model_cls.roll_shared_buffer()
+
         raw_prediction_by_cluster = {}
         for cluster_head in agent_list:
             raw_prediction_by_cluster[cluster_head] = agent_list[cluster_head].estimate(
@@ -177,6 +214,8 @@ def _run_distributed_edge_case(
 
     nmse_curve = np.asarray(metrics[EDGE_DIM]._errors.get("tvNMSE", []), dtype=float).reshape(-1)
     rolling_curve = np.asarray(metrics[EDGE_DIM]._errors.get("rollingNMSE", []), dtype=float).reshape(-1)
+    if use_snapshot_agents:
+        SnapshotAgent.reset_shared_data_stream()
     return {
         "nmse_curve": nmse_curve,
         "rolling_nmse_curve": rolling_curve,

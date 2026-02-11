@@ -5,6 +5,7 @@ from hydra.utils import instantiate
 from tqdm import tqdm  # type: ignore[import-untyped]
 
 from src.core import BaseAgent
+from src.implementations.agent import SnapshotAgent
 from examples.utils.data_utils import build_partial_indices
 
 
@@ -43,6 +44,8 @@ def create_cluster_agents(
     protocol_overrides=None,
     disable_neighbors=False,
     show_progress=True,
+    snapshot_agent=False,
+    snapshot_data_stream=None,
 ):
     T = None
     agent_list = {}
@@ -57,32 +60,44 @@ def create_cluster_agents(
     if show_progress:
         iterator = tqdm(cluster_heads, desc="Creating agents", leave=False)
 
+    if snapshot_agent:
+        if snapshot_data_stream is None:
+            raise ValueError("snapshot_data_stream is required when snapshot_agent=True.")
+        SnapshotAgent.set_shared_data_stream(snapshot_data_stream)
+        T = getattr(snapshot_data_stream, "_T_total", None)
+
     for cluster_head in iterator:
-        processed_data = {}
         global_idx = deepcopy(clusters.global_to_local_idx[cluster_head])
         model_cellular_complex = clusters.clustered_complexes[cluster_head]
 
-        for dim in cc_data:
-            processed_data[dim] = cc_data[dim][global_idx[dim], :]
+        if snapshot_agent:
+            processed_data = {}
+            interface = {}
+            Nout = {}
+            Nex = {}
+        else:
+            processed_data = {}
+            for dim in cc_data:
+                processed_data[dim] = cc_data[dim][global_idx[dim], :]
 
-        interface = {}
-        for head_tuple in clusters.interface:
-            try:
-                idx_head = head_tuple.index(cluster_head)
-            except ValueError:
-                continue
-            idx_neighbor = 1 - idx_head
-            interface[head_tuple[idx_neighbor]] = clusters.interface[head_tuple]
+            interface = {}
+            for head_tuple in clusters.interface:
+                try:
+                    idx_head = head_tuple.index(cluster_head)
+                except ValueError:
+                    continue
+                idx_neighbor = 1 - idx_head
+                interface[head_tuple[idx_neighbor]] = clusters.interface[head_tuple]
 
-        Nout = {}
-        Nex = {}
-        for head_tuple in clusters.Nout:
-            if cluster_head not in head_tuple:
-                continue
-            if cluster_head == head_tuple[0]:
-                Nout[head_tuple[1]] = clusters.Nout[head_tuple]
-            elif cluster_head == head_tuple[1]:
-                Nex[head_tuple[0]] = clusters.Nout[head_tuple]
+            Nout = {}
+            Nex = {}
+            for head_tuple in clusters.Nout:
+                if cluster_head not in head_tuple:
+                    continue
+                if cluster_head == head_tuple[0]:
+                    Nout[head_tuple[1]] = clusters.Nout[head_tuple]
+                elif cluster_head == head_tuple[1]:
+                    Nex[head_tuple[0]] = clusters.Nout[head_tuple]
 
         protocol_cfg = deepcopy(cfg.protocol)
         if protocol_overrides:
@@ -96,7 +111,7 @@ def create_cluster_agents(
             nin_for_cluster=clusters.Nin[cluster_head],
         )
         source_out_positions = deepcopy(out_idx)
-        if force_in_equals_out:
+        if force_in_equals_out and not snapshot_agent:
             compact_global_idx = {}
             compact_processed_data = {}
             compact_pos_idx = {}
@@ -147,15 +162,6 @@ def create_cluster_agents(
             model_cfg,
             cellularComplex=model_cellular_complex,
         )
-        ccdata = instantiate(
-            cfg.ccdata,
-            data=processed_data,
-            interface=interface,
-            Nout=Nout,
-            Nex=Nex,
-            global_idx=global_idx,
-        )
-
         neighbors = [] if disable_neighbors else list(clusters.agent_graph[cluster_head])
         weights = {}
         row_sum = 0.0
@@ -173,21 +179,39 @@ def create_cluster_agents(
         weights["self"] = 1.0 - row_sum
 
         mixing = instantiate(cfg.mixing, weights=weights)
-        imputer = instantiate(cfg.imputer)
+        if snapshot_agent:
+            currAgent = SnapshotAgent(
+                cluster_id=cluster_head,
+                model=ccvarmodel,
+                protocol=protocol,
+                mix=mixing,
+                neighbors=set(neighbors),
+            )
+        else:
+            ccdata = instantiate(
+                cfg.ccdata,
+                data=processed_data,
+                interface=interface,
+                Nout=Nout,
+                Nex=Nex,
+                global_idx=global_idx,
+            )
+            imputer = instantiate(cfg.imputer)
 
-        currAgent = BaseAgent(
-            cluster_id=cluster_head,
-            model=ccvarmodel,
-            data=ccdata,
-            protocol=protocol,
-            mix=mixing,
-            imputer=imputer,
-            neighbors=set(neighbors),
-            cellularComplex=model_cellular_complex,
-        )
+            currAgent = BaseAgent(
+                cluster_id=cluster_head,
+                model=ccvarmodel,
+                data=ccdata,
+                protocol=protocol,
+                mix=mixing,
+                imputer=imputer,
+                neighbors=set(neighbors),
+                cellularComplex=model_cellular_complex,
+            )
         agent_list[cluster_head] = currAgent
 
-        if T is None or currAgent._data._T_total < T:
-            T = currAgent._data._T_total
+        if not snapshot_agent:
+            if T is None or currAgent._data._T_total < T:
+                T = currAgent._data._T_total
 
     return agent_list, cluster_out_global_idx, T

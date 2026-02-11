@@ -265,6 +265,115 @@ class topoLMSPartial(topoLMS):
         return yhat_full[self._out_idx]
 
 
+class topoLMSPartialEdge(topoLMS):
+    """
+    Edge-only TopoLMS with shared/static rolling buffers.
+    All instances share the same feature-state buffers and current input snapshot.
+    """
+
+    _shared_upper_part = None
+    _shared_lower_part = None
+    _shared_data = None
+    _shared_input = None
+    _shared_L_lower = None
+    _shared_L_upper = None
+    _shared_N = None
+    _shared_M = None
+
+    @classmethod
+    def reset_shared_state(cls):
+        cls._shared_upper_part = None
+        cls._shared_lower_part = None
+        cls._shared_data = None
+        cls._shared_input = None
+        cls._shared_L_lower = None
+        cls._shared_L_upper = None
+        cls._shared_N = None
+        cls._shared_M = None
+
+    @classmethod
+    def set_input_data(cls, x_n: np.ndarray):
+        cls._shared_input = np.asarray(x_n, dtype=float).reshape(-1)
+
+    @classmethod
+    def roll_shared_buffer(cls):
+        if cls._shared_input is None:
+            return
+        if cls._shared_N is None or cls._shared_M is None:
+            return
+
+        x_n = cls._shared_input
+        N = int(cls._shared_N)
+        M = int(cls._shared_M)
+        if x_n.size != N:
+            raise ValueError(f"Shared input size {x_n.size} does not match edge dimension {N}")
+
+        if M > 0:
+            cls._shared_data[:, 0:M] = cls._shared_data[:, 1 : M + 1]
+        cls._shared_data[:, -1] = x_n
+
+        cls._shared_upper_part[:] = cls._shared_L_upper @ cls._shared_upper_part
+        if M > 0:
+            cls._shared_upper_part[:, 0:M] = cls._shared_upper_part[:, 1:]
+        cls._shared_upper_part[:, -1] = x_n
+
+        if M > 0:
+            if M > 1:
+                cls._shared_lower_part[:, 0 : (M - 1)] = cls._shared_lower_part[:, 1:]
+            cls._shared_lower_part[:, -1] = x_n
+            cls._shared_lower_part[:] = cls._shared_L_lower @ cls._shared_lower_part
+
+        cls._shared_input = None
+
+    def __init__(self, algorithmParam: dict):
+        algo_local = dict(algorithmParam)
+        algo_local["signal_key"] = 1
+        out_idx_raw = algo_local.get("out_idx", None)
+
+        super().__init__(algorithmParam=algo_local)
+
+        if out_idx_raw is None:
+            out_idx_local = np.arange(self.N, dtype=int)
+        else:
+            out_idx = _extract_index_list(out_idx_raw, 1)
+            if out_idx.size == 0:
+                out_idx_local = np.arange(self.N, dtype=int)
+            else:
+                valid = (out_idx >= 0) & (out_idx < self.N)
+                out_idx_local = out_idx[valid]
+                if out_idx_local.size == 0:
+                    out_idx_local = np.arange(self.N, dtype=int)
+
+        self._signal_key = 1
+        self._out_idx = out_idx_local
+        self._Nin = int(self.N)
+        self._Nout = int(self._out_idx.size)
+
+        cls = type(self)
+        if cls._shared_upper_part is None:
+            cls._shared_N = int(self.N)
+            cls._shared_M = int(self.M)
+            cls._shared_L_lower = self.L_lower.copy()
+            cls._shared_L_upper = self.L_upper.copy()
+            cls._shared_upper_part = np.zeros((self.N, self.M + 1), dtype=float)
+            cls._shared_lower_part = np.zeros((self.N, self.M), dtype=float) if self.M > 0 else np.zeros((self.N, 0), dtype=float)
+            cls._shared_data = np.zeros((self.N, self.M + 1), dtype=float)
+        else:
+            if int(cls._shared_N) != int(self.N) or int(cls._shared_M) != int(self.M):
+                raise ValueError("topoLMSPartialEdge shared buffer shape mismatch across instances")
+
+        # Bind instance views to shared static state.
+        self.upper_part = cls._shared_upper_part
+        self.lower_part = cls._shared_lower_part
+        self._data = cls._shared_data
+
+    def predictData(self, return_full: bool = False) -> np.ndarray:
+        yhat_full = super().predictData()
+        if return_full:
+            return yhat_full
+        return yhat_full[self._out_idx]
+
+
 class topoLMSModel(BaseModel):
     def __init__(self, algorithmParam: dict, cellularComplex=None):
         algorithm_param_local = dict(algorithmParam)
@@ -424,3 +533,75 @@ class topoLMSPartialModel(BaseModel):
         yhat = self._algorithm.predictData(return_full=False)
         self._algorithm.T = old_t
         return {self._signal_key: yhat}
+
+
+class topoLMSPartialEdgeModel(topoLMSPartialModel):
+    """
+    Edge-only model wrapper.
+    Forces signal_key=1 and uses topoLMSPartialEdge algorithm.
+    """
+
+    def __init__(self, algorithmParam: dict, cellularComplex=None):
+        algorithm_param_local = dict(algorithmParam)
+        algorithm_param_local["signal_key"] = 1
+        self._signal_key = 1
+        if ("L_lower" not in algorithm_param_local) or ("L_upper" not in algorithm_param_local):
+            L_lower, L_upper = _build_laplacians_from_complex(
+                cellularComplex=cellularComplex,
+                signal_key=self._signal_key,
+            )
+            algorithm_param_local.setdefault("L_lower", L_lower)
+            algorithm_param_local.setdefault("L_upper", L_upper)
+
+        algorithm = topoLMSPartialEdge(algorithmParam=algorithm_param_local)
+        BaseModel.__init__(self, initial_params=algorithm.h.copy(), algorithm=algorithm)
+        self._last_mu = 1.0
+
+    @classmethod
+    def roll_shared_buffer(cls):
+        topoLMSPartialEdge.roll_shared_buffer()
+
+    @classmethod
+    def reset_shared_state(cls):
+        topoLMSPartialEdge.reset_shared_state()
+
+    def _resolve_current_sample(self, aggregated_data):
+        data = aggregated_data.get_data()
+        if self._signal_key in data:
+            x_raw = np.asarray(data[self._signal_key], dtype=float).reshape(-1)
+        elif len(data) == 1:
+            only_key = next(iter(data.keys()))
+            self._signal_key = int(only_key)
+            x_raw = np.asarray(data[only_key], dtype=float).reshape(-1)
+        else:
+            raise KeyError(
+                f"topoLMSPartialEdgeModel expected signal_key={self._signal_key} in aggregated data keys {list(data.keys())}"
+            )
+        if x_raw.size != self._algorithm.N:
+            raise ValueError(
+                f"Input sample length {x_raw.size} incompatible with full edge size {self._algorithm.N}"
+            )
+        return x_raw
+
+    def get_gradient(self, aggregated_data, **kwargs):
+        del kwargs
+        x_n = self._resolve_current_sample(aggregated_data=aggregated_data)
+        topoLMSPartialEdge.set_input_data(x_n=x_n)
+
+        y_next = x_n[self._algorithm._out_idx].reshape(-1, 1)
+        X_n = self._algorithm._stack_X(self._algorithm.upper_part, self._algorithm.lower_part)
+        X_out = X_n[self._algorithm._out_idx, :]
+        if X_out.size:
+            svals = np.linalg.svd(X_out, compute_uv=False)
+            sigma_max_sq = float(svals[0] ** 2) if svals.size else 0.0
+        else:
+            sigma_max_sq = 0.0
+        self._last_mu = 1.0 / (1e-4 + sigma_max_sq)
+
+        grad = self._algorithm._get_gradient(X_out, y_next).reshape(-1, 1)
+        return grad.flatten()
+
+    def update_params(self, update_term):
+        update_arr = np.asarray(update_term, dtype=float).reshape(-1, 1)
+        new_params = self._params + self._last_mu * update_arr
+        self.set_params(new_params=new_params)
