@@ -1,1 +1,1 @@
-from .ccvar import CCVARModel, CCVARPartialModel
+from .ccvar import CCVARModel, CCVARPartialEdgeModel, CCVARPartialModel

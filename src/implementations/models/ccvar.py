@@ -309,6 +309,23 @@ class CCVARPartialIn(CCVARPartial):
         return preds
 
 
+class CCVARPartialEdge(CCVARPartial):
+    def _algorithm_parameter_setup(self, algorithmParam):
+        edge_only_params = copy.deepcopy(algorithmParam)
+        edge_only_params["enabler"] = [False, True, False]
+        super()._algorithm_parameter_setup(edge_only_params)
+
+        # Keep full in_idx for feature construction, but estimate/update only edges.
+        if 1 not in self._in_idx:
+            self._in_idx[1] = self._out_idx.get(1, [])
+        if 0 not in self._in_idx:
+            self._in_idx[0] = []
+        if 2 not in self._in_idx:
+            self._in_idx[2] = []
+        if 1 not in self._out_idx:
+            self._out_idx[1] = self._in_idx.get(1, [])
+
+
 class CCVARPartialModel(BaseModel):
     def __init__(self, algorithmParam, cellularComplex):
         ccvarParams = (algorithmParam, cellularComplex)
@@ -408,6 +425,21 @@ class CCVARPartialInModel(CCVARPartialModel):
     def __init__(self, algorithmParam, cellularComplex):
         ccvarParams = (algorithmParam, cellularComplex)
         algorithm = CCVARPartialIn(*ccvarParams)
+        initial_params = []
+        for key in algorithm._data_keys:
+            initial_params.append(algorithm._theta[key])
+        initial_params = np.vstack(initial_params)
+
+        BaseModel.__init__(self, initial_params=initial_params, algorithm=algorithm)
+        self._param_slices = dict()
+        self._param_length = 0
+        self._eta = dict()
+
+
+class CCVARPartialEdgeModel(CCVARPartialModel):
+    def __init__(self, algorithmParam, cellularComplex):
+        ccvarParams = (algorithmParam, cellularComplex)
+        algorithm = CCVARPartialEdge(*ccvarParams)
         initial_params = []
         for key in algorithm._data_keys:
             initial_params.append(algorithm._theta[key])
