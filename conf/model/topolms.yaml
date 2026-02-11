@@ -1,0 +1,6 @@
+defaults:
+  - topolms_common
+  - _self_
+
+_target_: src.implementations.models.topolms.topoLMSModel
+

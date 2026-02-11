@@ -19,6 +19,7 @@ class KGTMixingModel(BaseMixingModel):
     def mix_parameters(self, **kwargs):
         neighbor_params = kwargs.get('neighbor_params', {})
         neighbor_aux = kwargs.get('neighbor_aux', {})
+        neighbor_params_no_self = {k: v for k, v in neighbor_params.items() if k != "self"}
 
         self._correction -= self._aux
         self._correction += self._weights.get('self', 0) * self._aux
@@ -36,7 +37,7 @@ class KGTMixingModel(BaseMixingModel):
 
         ## Update history after mixing
         self._history['self'] = new_params
-        self._history.update(neighbor_params)
+        self._history.update(neighbor_params_no_self)
 
         return new_params
 

@@ -19,6 +19,25 @@ from examples.utils.clustering_utils import create_cluster_agents
 from examples.utils.data_utils import load_data
 
 
+def _apply_matlab_plot_defaults():
+    plt.rcParams.update(
+        {
+            "figure.figsize": (7.61, 6.65),
+            "font.size": 25,
+            "font.family": "sans-serif",
+            "font.sans-serif": ["Helvetica", "Arial", "DejaVu Sans"],
+            "axes.labelsize": 40,
+            "axes.titlesize": 25,
+            "xtick.labelsize": 25,
+            "ytick.labelsize": 25,
+            "legend.fontsize": 25,
+            "lines.linewidth": 3.0,
+            "axes.unicode_minus": False,
+            "text.usetex": False,
+        }
+    )
+
+
 def _get_forecast_horizon(cfg):
     model_algorithm = cfg.model.get("algorithmParam", {})
     return max(1, int(model_algorithm.get("Tstep", 1)))
@@ -442,13 +461,14 @@ def _run_global_case(cfg, cc_data, cellular_complex, interface_mask_by_dim, fore
 
 
 def _save_boundary_plot_and_summary(output_root, curves):
+    _apply_matlab_plot_defaults()
     overall_curves = {label: payload["overall"] for label, payload in curves.items()}
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(7.61, 6.65))
     for label, curve in overall_curves.items():
-        ax.plot(np.asarray(curve, dtype=float), linewidth=2.5, label=label)
+        ax.plot(np.asarray(curve, dtype=float), label=label)
     ax.set_xlabel("t")
-    ax.set_ylabel("Interface tvNMSE")
+    ax.set_ylabel("tvNMSE")
     ax.grid(True, alpha=0.3)
     ax.legend(loc="best")
     fig.tight_layout()
@@ -465,12 +485,12 @@ def _save_boundary_plot_and_summary(output_root, curves):
         if not has_dim:
             continue
 
-        fig_dim, ax_dim = plt.subplots(figsize=(10, 6))
+        fig_dim, ax_dim = plt.subplots(figsize=(7.61, 6.65))
         for label, payload in curves.items():
             if dim in payload["by_dim"]:
-                ax_dim.plot(np.asarray(payload["by_dim"][dim], dtype=float), linewidth=2.5, label=label)
+                ax_dim.plot(np.asarray(payload["by_dim"][dim], dtype=float), label=label)
         ax_dim.set_xlabel("t")
-        ax_dim.set_ylabel(f"Interface tvNMSE (dim={dim})")
+        ax_dim.set_ylabel(f"tvNMSE")
         ax_dim.grid(True, alpha=0.3)
         ax_dim.legend(loc="best")
         fig_dim.tight_layout()
@@ -527,7 +547,16 @@ def main(cfg: DictConfig):
     output_root.mkdir(parents=True, exist_ok=True)
 
     curves = {}
-    curves["Distributed (C_data=10, C_param=10)"] = _run_distributed_case(
+    curves[r"Distributed ($C_{data} = 1$)"] = _run_distributed_case(
+        cfg=deepcopy(cfg),
+        cc_data=cc_data,
+        clusters=clusters,
+        interface_idx_by_dim=interface_idx_by_dim,
+        forecast_horizon=forecast_horizon,
+        case_name="Boundary Dist (1,10)",
+        protocol_overrides={"C_data": 1, "C_param": 10},
+    )
+    curves[r"Distributed ($C_{data} = 10$)"] = _run_distributed_case(
         cfg=deepcopy(cfg),
         cc_data=cc_data,
         clusters=clusters,
@@ -536,7 +565,7 @@ def main(cfg: DictConfig):
         case_name="Boundary Dist (10,10)",
         protocol_overrides={"C_data": 10, "C_param": 10},
     )
-    curves["Distributed (C_data=100, C_param=10)"] = _run_distributed_case(
+    curves[r"Distributed ($C_{data} = 100$)"] = _run_distributed_case(
         cfg=deepcopy(cfg),
         cc_data=cc_data,
         clusters=clusters,
@@ -545,17 +574,16 @@ def main(cfg: DictConfig):
         case_name="Boundary Dist (100,10)",
         protocol_overrides={"C_data": 100, "C_param": 10},
     )
-    # curves["Distributed + ZeroHold"] = _run_distributed_case(
-    #     cfg=deepcopy(cfg),
-    #     cc_data=cc_data,
-    #     clusters=clusters,
-    #     interface_idx_by_dim=interface_idx_by_dim,
-    #     forecast_horizon=forecast_horizon,
-    #     case_name="Boundary Dist ZeroHold",
-    #     protocol_overrides={"C_data": 10, "C_param": 10},
-    #     imputer_target="src.implementations.imputer.zero_padder.ZeroPadder",
-    # )
-    curves["Global CC-VAR"] = _run_global_case(
+    curves[r"Distributed ($C_{data} = 300$)"] = _run_distributed_case(
+        cfg=deepcopy(cfg),
+        cc_data=cc_data,
+        clusters=clusters,
+        interface_idx_by_dim=interface_idx_by_dim,
+        forecast_horizon=forecast_horizon,
+        case_name="Boundary Dist (300,10)",
+        protocol_overrides={"C_data": 300, "C_param": 10},
+    )
+    curves["Global"] = _run_global_case(
         cfg=deepcopy(cfg),
         cc_data=cc_data,
         cellular_complex=cellular_complex,

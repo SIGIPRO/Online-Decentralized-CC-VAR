@@ -12,6 +12,83 @@ import matplotlib.pyplot as plt
 from scipy.io import loadmat
 
 @dataclass
+class OnlyEdgesClustering:
+    cellularComplex: Dict[int, np.ndarray]
+    clusteringParameters: Dict[str, int]
+
+    Nin: Dict[int, Any] = field(default_factory=dict)
+    Nout: Dict[Tuple[int, int], Any] = field(default_factory=dict)
+    interface: Dict[Tuple[int, int], Any] = field(default_factory=dict)
+    clustered_complexes: Dict[int, Dict[int, np.ndarray]] = field(default_factory=dict)
+    global_to_local_idx: Dict[int, Dict[int, List[int]]] = field(default_factory=dict)
+    agent_graph: Dict[int, Set] = field(default_factory=dict)
+    adjacency_graph: nx.Graph = field(default_factory=nx.Graph)
+
+    def __post_init__(self):
+        B1 = self.cellularComplex.get(1, None)
+        B2 = self.cellularComplex.get(2, None)
+        if B1 is None and B2 is None:
+            raise ValueError("OnlyEdgesClustering requires at least B1 or B2 in cellularComplex.")
+
+        if B1 is not None:
+            num_nodes = int(B1.shape[0])
+            num_edges = int(B1.shape[1])
+        else:
+            num_nodes = 0
+            num_edges = int(B2.shape[0])
+        num_faces = int(B2.shape[1]) if B2 is not None else 0
+
+        # Edge-adjacency: two edges are neighbors if they share lower/upper incidence.
+        lower_adj = np.zeros((num_edges, num_edges), dtype=float)
+        upper_adj = np.zeros((num_edges, num_edges), dtype=float)
+        if B1 is not None:
+            lower_adj = B1.T @ B1
+        if B2 is not None:
+            upper_adj = B2 @ B2.T
+        edge_adj = (lower_adj + upper_adj) != 0
+        np.fill_diagonal(edge_adj, False)
+        self.adjacency_graph = nx.from_numpy_array(edge_adj.astype(int))
+
+        all_nodes = list(range(num_nodes))
+        all_edges = list(range(num_edges))
+        all_faces = list(range(num_faces))
+
+        # Each agent is exactly one edge: Nin[h][1] = {h}, other dimensions empty.
+        for h in all_edges:
+            self.Nin[h] = {
+                0: [],
+                1: [h],
+                2: [],
+            }
+            self.agent_graph[h] = set(self.adjacency_graph.neighbors(h))
+
+        # Interface is explicitly empty.
+        self.interface = {}
+
+        # Nout to each neighbor carries all other cells (except own edge).
+        for h in all_edges:
+            other_edges = [e for e in all_edges if e != h]
+            for j in self.agent_graph[h]:
+                self.Nout[(h, j)] = {
+                    0: list(all_nodes),
+                    1: list(other_edges),
+                    2: list(all_faces),
+                }
+
+        # Local model view per agent: full indices to support full topological features.
+        for h in all_edges:
+            self.global_to_local_idx[h] = {
+                0: list(all_nodes),
+                1: list(all_edges),
+                2: list(all_faces),
+            }
+            self.clustered_complexes[h] = {}
+            if B1 is not None:
+                self.clustered_complexes[h][1] = B1.copy()
+            if B2 is not None:
+                self.clustered_complexes[h][2] = B2.copy()
+
+@dataclass
 class ModularityBasedClustering:
     """Cellular complex clustering with d-hop ad hoc algorithms. The class simulates the ad-hoc algorithm. However, this is not an exactly distributed algorithm. The class will save and return clustering results given Hodge-Laplacian and boundary matrices.
     """

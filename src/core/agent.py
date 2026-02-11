@@ -76,9 +76,13 @@ class BaseAgent:
         self._neighbor_aux = {}
 
     def do_consensus(self):
+        # Provide local parameters explicitly so mixing rules (e.g., ATC)
+        # can include self-weighted terms without relying on neighbor traffic.
+        mixing_params = dict(self._neighbor_params)
+        mixing_params["self"] = self._model.get_params()
         self._model.set_params(
             self._mixing_model.mix_parameters(
-                neighbor_params = self._neighbor_params,
+                neighbor_params = mixing_params,
                 neighbor_aux = self._neighbor_aux
             )
         )
