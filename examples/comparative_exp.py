@@ -232,6 +232,7 @@ def _save_case_comparison_artifacts(output_root: Path, case_results: dict):
         ax.plot(result["nmse_curve"], linewidth=3.0, label=result["label"])
     ax.set_xlabel("t", fontsize=40, fontname="Helvetica")
     ax.set_ylabel("NMSE", fontsize=40, fontname="Helvetica")
+    ax.set_ylim(0.0, 1.0)
     ax.grid(True, alpha=0.3)
     ax.legend(loc="best", prop={"family": "Helvetica", "size": 25})
     ax.tick_params(axis="both", labelsize=25)
