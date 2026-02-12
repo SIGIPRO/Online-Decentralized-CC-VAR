@@ -23,6 +23,7 @@ import matplotlib.pyplot as plt
 
 EDGE_DIM = 1
 KEEP_METRICS = ["tvNMSE", "rollingNMSE"]
+LINESTYLE_CYCLE = ["-", "--", "-.", ":", (0, (5, 1)), (0, (3, 1, 1, 1))]
 
 
 def _slugify(value: str) -> str:
@@ -228,8 +229,13 @@ def _run_distributed_edge_case(
 
 def _save_case_comparison_artifacts(output_root: Path, case_results: dict):
     fig, ax = plt.subplots(figsize=(7.61, 6.65))
-    for _, result in case_results.items():
-        ax.plot(result["nmse_curve"], linewidth=3.0, label=result["label"])
+    for idx, (_, result) in enumerate(case_results.items()):
+        ax.plot(
+            result["nmse_curve"],
+            linewidth=3.0,
+            linestyle=LINESTYLE_CYCLE[idx % len(LINESTYLE_CYCLE)],
+            label=result["label"],
+        )
     ax.set_xlabel("t", fontsize=40, fontname="Helvetica")
     ax.set_ylabel("NMSE", fontsize=40, fontname="Helvetica")
     ax.set_ylim(0.0, 1.0)

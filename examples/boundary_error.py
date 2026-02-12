@@ -18,6 +18,8 @@ from cellexp_util.registry.metric_registry import ensure_metrics_registered
 from examples.utils.clustering_utils import create_cluster_agents
 from examples.utils.data_utils import load_data
 
+LINESTYLE_CYCLE = ["-", "--", "-.", ":", (0, (5, 1)), (0, (3, 1, 1, 1))]
+
 
 def _apply_matlab_plot_defaults():
     plt.rcParams.update(
@@ -465,8 +467,12 @@ def _save_boundary_plot_and_summary(output_root, curves):
     overall_curves = {label: payload["overall"] for label, payload in curves.items()}
 
     fig, ax = plt.subplots(figsize=(7.61, 6.65))
-    for label, curve in overall_curves.items():
-        ax.plot(np.asarray(curve, dtype=float), label=label)
+    for idx, (label, curve) in enumerate(overall_curves.items()):
+        ax.plot(
+            np.asarray(curve, dtype=float),
+            linestyle=LINESTYLE_CYCLE[idx % len(LINESTYLE_CYCLE)],
+            label=label,
+        )
     ax.set_xlabel("t")
     ax.set_ylabel("tvNMSE")
     ax.grid(True, alpha=0.3)
@@ -486,9 +492,15 @@ def _save_boundary_plot_and_summary(output_root, curves):
             continue
 
         fig_dim, ax_dim = plt.subplots(figsize=(7.61, 6.65))
+        line_idx = 0
         for label, payload in curves.items():
             if dim in payload["by_dim"]:
-                ax_dim.plot(np.asarray(payload["by_dim"][dim], dtype=float), label=label)
+                ax_dim.plot(
+                    np.asarray(payload["by_dim"][dim], dtype=float),
+                    linestyle=LINESTYLE_CYCLE[line_idx % len(LINESTYLE_CYCLE)],
+                    label=label,
+                )
+                line_idx += 1
         ax_dim.set_xlabel("t")
         ax_dim.set_ylabel(f"tvNMSE")
         ax_dim.grid(True, alpha=0.3)

@@ -37,6 +37,7 @@ MATLAB_LINEWIDTH = 3.0
 MATLAB_AXIS_FONTSIZE = 25
 MATLAB_LABEL_FONTSIZE = 40
 MATLAB_FONTNAME = "Helvetica"
+LINESTYLE_CYCLE = ["-", "--", "-.", ":", (0, (5, 1)), (0, (3, 1, 1, 1))]
 
 DEFAULT_CASE_DEFS = {
     "global": {
@@ -255,9 +256,14 @@ def _save_error_comparison_plots(output_root: Path, case_metric_managers, compar
     for dim in dims:
         for metric_name in ERROR_METRICS:
             fig, ax = plt.subplots(figsize=MATLAB_FIGSIZE)
-            for case_name, label in comparison_cases:
+            for idx, (case_name, label) in enumerate(comparison_cases):
                 series = np.asarray(case_metric_managers[case_name][dim]._errors.get(metric_name, []), dtype=float).reshape(-1)
-                ax.plot(series, linewidth=MATLAB_LINEWIDTH, label=label)
+                ax.plot(
+                    series,
+                    linewidth=MATLAB_LINEWIDTH,
+                    linestyle=LINESTYLE_CYCLE[idx % len(LINESTYLE_CYCLE)],
+                    label=label,
+                )
 
             ax.set_xlabel("t", fontsize=MATLAB_LABEL_FONTSIZE, fontname=MATLAB_FONTNAME)
             ylabel = "NMSE" if metric_name == "rollingNMSE" else metric_name

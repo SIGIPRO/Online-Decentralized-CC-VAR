@@ -36,12 +36,16 @@ DISAGREEMENT_METRICS = [
     "tvGlobalRMSRelative",
     "rollingGlobalRMSRelative",
 ]
+METRIC_DISPLAY_LABELS = {
+    "tvGlobalRMSRelative": "Global Disagreement",
+}
 
 MATLAB_FIGSIZE = (7.61, 6.65)
 MATLAB_LINEWIDTH = 3.0
 MATLAB_AXIS_FONTSIZE = 25
 MATLAB_LABEL_FONTSIZE = 40
 MATLAB_FONTNAME = "Helvetica"
+LINESTYLE_CYCLE = ["-", "--", "-.", ":", (0, (5, 1)), (0, (3, 1, 1, 1))]
 
 DEFAULT_CASE_DEFS = {
     "global": {
@@ -274,13 +278,19 @@ def _save_metric_comparison_plots(output_root: Path, case_metric_managers, compa
         return
 
     for metric_name in DISAGREEMENT_METRICS:
+        ylabel = METRIC_DISPLAY_LABELS.get(metric_name, metric_name)
         fig, ax = plt.subplots(figsize=MATLAB_FIGSIZE)
-        for case_name, label in comparison_cases:
+        for idx, (case_name, label) in enumerate(comparison_cases):
             series = np.asarray(case_metric_managers[case_name]._errors.get(metric_name, []), dtype=float).reshape(-1)
-            ax.plot(series, linewidth=MATLAB_LINEWIDTH, label=label)
+            ax.plot(
+                series,
+                linewidth=MATLAB_LINEWIDTH,
+                linestyle=LINESTYLE_CYCLE[idx % len(LINESTYLE_CYCLE)],
+                label=label,
+            )
 
         ax.set_xlabel("t", fontsize=MATLAB_LABEL_FONTSIZE, fontname=MATLAB_FONTNAME)
-        ax.set_ylabel(metric_name, fontsize=MATLAB_LABEL_FONTSIZE, fontname=MATLAB_FONTNAME)
+        ax.set_ylabel(ylabel, fontsize=MATLAB_LABEL_FONTSIZE, fontname=MATLAB_FONTNAME)
         ax.grid(True, alpha=0.3)
         ax.legend(loc="best", prop={"family": MATLAB_FONTNAME, "size": MATLAB_AXIS_FONTSIZE})
         ax.tick_params(axis="both", labelsize=MATLAB_AXIS_FONTSIZE)
