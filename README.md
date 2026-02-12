@@ -1,84 +1,168 @@
-# Distributed CC-VAR
+# Distributed-CC-VAR
 
-Lightweight building blocks for simulating distributed conditional value-at-risk (CC-VAR) estimation over cellular-complex graphs. The library provides agents, protocols, mixing rules, and model wrappers that you can compose into custom experiments.
+Research codebase for distributed learning/forecasting on cellular complexes, centered around CC-VAR and TopoLMS variants with configurable communication, clustering, and mixing rules.
 
-## Overview
-- Core abstractions in `src/core/`: `BaseAgent`, `BaseModel`, `BaseMixingModel`, `BaseProtocol`, and a stub `BaseEnvironment`.
-- Reference implementations in `src/implementations/`: K-step synchronous protocol, KGT-style mixing, a CCVAR model wrapper, and helper agents (`DataHolderAgent`, `ZeroPadderAgent`). `label_propagator.py` is currently a stub.
-- Data utilities in `src/cc_utils/ccdata.py`: in-memory cellular-complex iterator, MATLAB loader (`from_matlab`), and zero-filled helpers.
-- External dependency: the CCVAR wrapper expects `ccvar.CCVAR` to be importable; that package is not bundled here.
+## What This Repo Contains
 
-## Installation
-Requires Python 3.8+.
+- Core framework under `src/core`:
+  - `BaseAgent`, `BaseModel`, `BaseMixingModel`, `BaseProtocol`
+- Implementations under `src/implementations`:
+  - Models: CC-VAR/partial variants, TopoLMS/partial variants
+  - Mixing: K-GT, Diffusion ATC
+  - Protocol: K-step communication protocol
+- Utilities and data helpers:
+  - `src/cc_utils`, `examples/utils`
+- Experiment entrypoints:
+  - `examples/error_comparison.py`
+  - `examples/dynamic_regret.py`
+  - `examples/boundary_error.py`
+  - `examples/comparative_exp.py`
+  - `examples/comparative_exp_test.py`
+
+## Repository Layout
+
+```text
+conf/                 Hydra configs
+examples/             Experiment scripts
+scripts/              Convenience shell runners
+src/                  Framework + implementations
+outputs/              Saved plots/tables/results
+```
+
+## Environment Setup
+
+This repository is currently used with a local `venv` in the project root.
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+python3 -m venv venv
+source venv/bin/activate
 pip install -e .
 ```
 
-Make sure your environment also has the `ccvar` module (or add it to `PYTHONPATH`), since `src/implementations/models/ccvar.py` imports it directly.
+Notes:
+- Python requirement in `pyproject.toml`: `>=3.8`
+- Experiments also require packages such as `hydra`, `omegaconf`, `matplotlib`, `tqdm`, plus external modules used by this project (e.g., `ccvar`, `cellexp_util`) available in your environment.
 
-## Quickstart (single-agent sketch)
-Adapt the parameters to your data shapes, neighborhood, and CCVAR signature.
+## Run Experiments (Scripts)
 
-```python
-import numpy as np
-from src.core import BaseAgent
-from src.cc_utils import CellularComplexInMemoryData
-from src.implementations.protocols import KStepProtocol
-from src.implementations.mixing import KGTMixingModel
-from src.implementations.models import CCVARModel
+All scripts are in `scripts/` and are intended to be run from the repo root.
 
-# Local time-series per cluster: {name: np.ndarray of shape (features, time)}
-local_data = {"cluster_0": np.random.randn(4, 20)}
+### 1) Convergence Analysis
+Runs:
+- `examples.error_comparison` with `[global, pure_local, parameter_dataset]`
+- `examples.dynamic_regret` with `[global, pure_local, parameter_dataset]`
 
-# Communication neighborhood (outgoing and incoming clusters)
-Nout = {"cluster_1": {}}
-Nin = {"cluster_1": {}}
-
-# Forwarded directly to ccvar.CCVAR(*ccvar_params)
-ccvar_params = (...)
-
-mixing_params = (
-    {"tracking": {"self": 0.0}, "correction": 0.0},  # initial_aux_vars
-    {"self": 1.0, "cluster_1": 0.5},                 # weights
-    {"K": 1.0, "c": 0.01, "s": 1.0},                 # eta hyperparameters
-)
-
-agent = BaseAgent(
-    model=CCVARModel,
-    modelParams=(ccvar_params,),
-    Nin=Nin,
-    Nout=Nout,
-    data=CellularComplexInMemoryData,
-    dataParams=(local_data,),
-    protocol=KStepProtocol,
-    protocolParams=(1, 5),  # send data every step, parameters every 5 steps
-    mix=KGTMixingModel,
-    mixingParams=mixing_params,
-)
-
-for t in range(10):
-    if not agent.update(t=t):
-        break
-
-forecast = agent.estimate(steps=1)
-print(forecast)
+```bash
+bash scripts/convergence_analysis.sh
 ```
 
-## Project layout
-- `src/core/`: base classes for agents, models, protocols, mixing, and environment.
-- `src/implementations/`: concrete protocol/mixing/model/agent helpers (K-step, KGT, CCVAR wrapper, data holders).
-- `src/cc_utils/ccdata.py`: cellular-complex data loaders/iterators (`from_matlab`, zero padding).
-- `examples/`: stubs for dataset-driven demos (e.g., `examples/ocean_dataset_cellular.py`).
-- `configs/`: placeholder for experiment configs.
-- `pyproject.toml`: packaging metadata and dependency pins (`numpy`, `pyyaml`, `scipy`).
+With Hydra overrides:
+```bash
+bash scripts/convergence_analysis.sh protocol.C_data=5 protocol.C_param=10 model.algorithmParam.Tstep=1
+```
 
-## Notes and gaps
-- Environment/router logic is intentionally minimal; implement message routing for multi-agent simulations.
-- Example scripts and the label propagator are placeholders; fill these in to match your topology and datasets.
-- No automated tests are present yet—add coverage before extending algorithms.
+### 2) Communication Effect
+Runs the same two experiments with default sparse-data/frequent-parameter communication:
+- `model.algorithmParam.Tstep=1`
+- `protocol.C_data=1`
+- `protocol.C_param=100`
+
+```bash
+bash scripts/communication_effect.sh
+```
+
+Override defaults:
+```bash
+bash scripts/communication_effect.sh protocol.C_data=10 protocol.C_param=10
+```
+
+### 3) Boundary Error Experiment
+Runs `examples.boundary_error` and prints the latest summary file automatically.
+
+```bash
+bash scripts/boundary_error.sh
+```
+
+With overrides:
+```bash
+bash scripts/boundary_error.sh protocol.C_data=100 protocol.C_param=10
+```
+
+### 4) Comparative Experiment Test
+Runs `examples.comparative_exp_test` and prints:
+- edge NMSE summary
+- disagreement summary
+
+```bash
+bash scripts/comparative_exp_test.sh
+```
+
+With overrides:
+```bash
+bash scripts/comparative_exp_test.sh protocol.C_data=10 protocol.C_param=10
+```
+
+### 5) Comparative CC-VAR Edge Case (ATC/KGT switch)
+Runs `examples.comparative_exp` for CC-VAR edge-only case.
+
+ATC mode:
+```bash
+MODE=atc bash scripts/run_comparative_ccvar_edge.sh
+```
+
+KGT mode:
+```bash
+MODE=kgt C=1e-4 S=0.1 K=1 bash scripts/run_comparative_ccvar_edge.sh
+```
+
+## Run Experiments Directly (Without Scripts)
+
+```bash
+source venv/bin/activate
+export HYDRA_FULL_ERROR=1
+export MPLCONFIGDIR=/tmp/mpl
+```
+
+Examples:
+```bash
+python3 -m examples.error_comparison experiment=error_comparison
+python3 -m examples.dynamic_regret experiment=error_comparison
+python3 -m examples.boundary_error
+python3 -m examples.comparative_exp_test
+```
+
+## Outputs
+
+Results are written under:
+
+```text
+outputs/<dataset_name>/
+```
+
+Common subfolders:
+- `error_comparison/`
+- `dynamic_regret/`
+- `boundary_error/`
+- `comparative_exp/`
+- `comparative_exp_test/`
+
+Artifacts include:
+- `.pdf` plots
+- `.pkl` figure handles
+- `.md` / `.tex` summary tables
+
+## Hydra Config Notes
+
+- Global defaults: `conf/config.yaml`
+- Experiment presets: `conf/experiment/*.yaml`
+- Protocol params (`C_data`, `C_param`): `conf/protocol/kstep.yaml`
+- Model params (`Tstep`, `K`, `P`, etc.): `conf/model/*.yaml`
+
+Typical override pattern:
+```bash
+python3 -m <module> key1=value1 key2=value2
+```
 
 ## License
-MIT License (metadata in `pyproject.toml`).
+
+MIT

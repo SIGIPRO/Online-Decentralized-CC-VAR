@@ -166,10 +166,31 @@ def _build_test_cases(base_cfg: DictConfig):
     }
 
     return {
+        "global_ccvar": {
+            "name": "Global CC-VAR",
+            "label": "Global CC-VAR",
+            "family": "ccvar",
+            "runner": "global_ccvar_direct",
+            "protocol_overrides": common_protocol,
+            "clustering": clustering_cfg,
+            "model": ccvar_model_cfg,
+            "mixing": kgt_mixing_cfg,
+        },
+        "global_topolms": {
+            "name": "Global TopoLMS",
+            "label": "Global TopoLMS",
+            "family": "topolms",
+            "runner": "global_topolms_direct",
+            "protocol_overrides": common_protocol,
+            "clustering": clustering_cfg,
+            "model": topolms_model_cfg,
+            "mixing": atc_mixing_cfg,
+        },
         "topolms_atc_modularity": {
             "name": "TopoLMS + Diffusion ATC (Modularity)",
             "label": "TopoLMS (ATC)",
             "family": "topolms",
+            "runner": "distributed",
             "consensus_mode": "gated",
             "protocol_overrides": common_protocol,
             "clustering": clustering_cfg,
@@ -180,6 +201,7 @@ def _build_test_cases(base_cfg: DictConfig):
             "name": "TopoLMS + KGT (Modularity)",
             "label": "TopoLMS (KGT)",
             "family": "topolms",
+            "runner": "distributed",
             "consensus_mode": "gated",
             "protocol_overrides": common_protocol,
             "clustering": clustering_cfg,
@@ -190,6 +212,7 @@ def _build_test_cases(base_cfg: DictConfig):
             "name": "CCVAR + KGT (Modularity)",
             "label": "CC-VAR (KGT)",
             "family": "ccvar",
+            "runner": "distributed",
             "consensus_mode": "gated",
             "protocol_overrides": common_protocol,
             "clustering": clustering_cfg,
@@ -200,6 +223,7 @@ def _build_test_cases(base_cfg: DictConfig):
             "name": "CCVAR + Diffusion ATC (Modularity)",
             "label": "CC-VAR (ATC)",
             "family": "ccvar",
+            "runner": "distributed",
             "consensus_mode": "gated",
             "protocol_overrides": common_protocol,
             "clustering": clustering_cfg,
@@ -217,7 +241,7 @@ def _build_case_cfg(base_cfg: DictConfig, case_def: dict):
     return cfg_case
 
 
-def _run_case(
+def _run_distributed_case(
     cfg_case: DictConfig,
     case_def: dict,
     cc_data,
@@ -328,6 +352,145 @@ def _run_case(
     }
 
 
+def _evaluate_global_pending_prediction(metrics, prediction_vec, gt_vec, t, forecast_horizon):
+    eval_i = t - int(forecast_horizon)
+    mask = np.ones_like(gt_vec, dtype=bool)
+    metrics[EDGE_DIM].step_calculation(
+        i=eval_i,
+        prediction=np.asarray(prediction_vec, dtype=float).reshape(-1),
+        groundTruth={"s": np.asarray(gt_vec, dtype=float).reshape(-1), "mask": mask},
+        verbose=False,
+    )
+    return {"NMSE1": f"{metrics[EDGE_DIM]._errors['tvNMSE'][eval_i]:.3e}"}
+
+
+def _run_global_ccvar_case(cfg_case: DictConfig, case_def: dict, cc_data, cellular_complex, forecast_horizon: int):
+    cc_data_edge = {EDGE_DIM: cc_data[EDGE_DIM]}
+    T = int(cc_data_edge[EDGE_DIM].shape[1])
+    if T <= forecast_horizon:
+        raise ValueError(f"{case_def.get('name', 'case')}: need T ({T}) > forecast_horizon ({forecast_horizon}).")
+
+    output_dir_fn = lambda dim: Path.cwd() / "outputs" / cfg_case.dataset.dataset_name / "comparative_exp_test" / case_def["name"].lower().replace(" ", "_") / f"results_{dim}"
+    metrics, _ = init_metric_managers(
+        cc_data=cc_data_edge,
+        output_dir_fn=output_dir_fn,
+        T_eval=T - forecast_horizon,
+        keep_metrics=KEEP_METRICS,
+    )
+
+    algorithm_param = deepcopy(case_def["model"]["algorithmParam"])
+    algorithm_param.pop("in_idx", None)
+    algorithm_param.pop("out_idx", None)
+    algorithm_param["enabler"] = [False, True, False]
+    global_model = CCVAR(algorithmParam=algorithm_param, cellularComplex=cellular_complex)
+
+    pending_prediction_by_eval_t = {}
+    param_history = []
+    progress_bar = tqdm(range(0, T), desc=case_def.get("name", "Global CCVAR"))
+
+    for t in progress_bar:
+        pending_prediction_vec = pending_prediction_by_eval_t.pop(t, None)
+        if pending_prediction_vec is not None:
+            postfix = _evaluate_global_pending_prediction(
+                metrics=metrics,
+                prediction_vec=pending_prediction_vec,
+                gt_vec=cc_data_edge[EDGE_DIM][:, t],
+                t=t,
+                forecast_horizon=forecast_horizon,
+            )
+            progress_bar.set_postfix(postfix)
+
+        global_model.update(inputData={EDGE_DIM: cc_data_edge[EDGE_DIM][:, t]})
+        param_history.append({0: _flatten_theta_dict(global_model._theta).copy()})
+
+        global_forecast = global_model.forecast(steps=forecast_horizon)
+        pred_vec = _extract_horizon_vector(global_forecast.get(EDGE_DIM, np.array([])), forecast_horizon)
+        eval_t = t + forecast_horizon
+        if eval_t < T:
+            pending_prediction_by_eval_t[eval_t] = pred_vec
+
+    for dim in metrics:
+        metrics[dim].save_single(n=0)
+        metrics[dim].save_full(n=1)
+
+    nmse_curve = np.asarray(metrics[EDGE_DIM]._errors.get("tvNMSE", []), dtype=float).reshape(-1)
+    rolling_curve = np.asarray(metrics[EDGE_DIM]._errors.get("rollingNMSE", []), dtype=float).reshape(-1)
+    protocol_overrides = case_def.get("protocol_overrides", {})
+    return {
+        "nmse_curve": nmse_curve,
+        "rolling_nmse_curve": rolling_curve,
+        "last10_tvnmse": _mean_last_fraction(nmse_curve, fraction=0.1),
+        "last10_rolling_nmse": _mean_last_fraction(rolling_curve, fraction=0.1),
+        "param_history": param_history,
+        "C_data": protocol_overrides.get("C_data", cfg_case.protocol.get("C_data", "NA")),
+        "C_param": protocol_overrides.get("C_param", cfg_case.protocol.get("C_param", "NA")),
+    }
+
+
+def _run_global_topolms_case(cfg_case: DictConfig, case_def: dict, cc_data, cellular_complex, forecast_horizon: int):
+    cc_data_edge = {EDGE_DIM: cc_data[EDGE_DIM]}
+    T = int(cc_data_edge[EDGE_DIM].shape[1])
+    if T <= forecast_horizon:
+        raise ValueError(f"{case_def.get('name', 'case')}: need T ({T}) > forecast_horizon ({forecast_horizon}).")
+
+    output_dir_fn = lambda dim: Path.cwd() / "outputs" / cfg_case.dataset.dataset_name / "comparative_exp_test" / case_def["name"].lower().replace(" ", "_") / f"results_{dim}"
+    metrics, _ = init_metric_managers(
+        cc_data=cc_data_edge,
+        output_dir_fn=output_dir_fn,
+        T_eval=T - forecast_horizon,
+        keep_metrics=KEEP_METRICS,
+    )
+
+    algorithm_param = deepcopy(case_def["model"]["algorithmParam"])
+    M = int(algorithm_param.get("M", 2))
+    B1 = np.asarray(cellular_complex.get(1), dtype=float)
+    B2 = np.asarray(cellular_complex.get(2), dtype=float)
+    L_lower = B1.T @ B1
+    L_upper = B2 @ B2.T
+    global_model = topoLMS({"L_lower": L_lower, "L_upper": L_upper, "M": M, "T": int(forecast_horizon)})
+
+    pending_prediction_by_eval_t = {}
+    param_history = []
+    progress_bar = tqdm(range(0, T), desc=case_def.get("name", "Global TopoLMS"))
+
+    for t in progress_bar:
+        pending_prediction_vec = pending_prediction_by_eval_t.pop(t, None)
+        if pending_prediction_vec is not None:
+            postfix = _evaluate_global_pending_prediction(
+                metrics=metrics,
+                prediction_vec=pending_prediction_vec,
+                gt_vec=cc_data_edge[EDGE_DIM][:, t],
+                t=t,
+                forecast_horizon=forecast_horizon,
+            )
+            progress_bar.set_postfix(postfix)
+
+        global_model.updateParameters(incomingData={"s_next": cc_data_edge[EDGE_DIM][:, t]})
+        param_history.append({0: np.asarray(global_model.h, dtype=float).reshape(-1).copy()})
+
+        pred_vec = np.asarray(global_model.predictData(), dtype=float).reshape(-1)
+        eval_t = t + forecast_horizon
+        if eval_t < T:
+            pending_prediction_by_eval_t[eval_t] = pred_vec
+
+    for dim in metrics:
+        metrics[dim].save_single(n=0)
+        metrics[dim].save_full(n=1)
+
+    nmse_curve = np.asarray(metrics[EDGE_DIM]._errors.get("tvNMSE", []), dtype=float).reshape(-1)
+    rolling_curve = np.asarray(metrics[EDGE_DIM]._errors.get("rollingNMSE", []), dtype=float).reshape(-1)
+    protocol_overrides = case_def.get("protocol_overrides", {})
+    return {
+        "nmse_curve": nmse_curve,
+        "rolling_nmse_curve": rolling_curve,
+        "last10_tvnmse": _mean_last_fraction(nmse_curve, fraction=0.1),
+        "last10_rolling_nmse": _mean_last_fraction(rolling_curve, fraction=0.1),
+        "param_history": param_history,
+        "C_data": protocol_overrides.get("C_data", cfg_case.protocol.get("C_data", "NA")),
+        "C_param": protocol_overrides.get("C_param", cfg_case.protocol.get("C_param", "NA")),
+    }
+
+
 def _build_global_ccvar_param_history(case_def: dict, cc_data, cellular_complex, T):
     algorithm_param = deepcopy(case_def["model"]["algorithmParam"])
     algorithm_param.pop("in_idx", None)
@@ -385,7 +548,7 @@ def _save_outputs(output_root: Path, case_results: dict):
             label=result["label"],
         )
     ax.set_xlabel("t", fontsize=40, fontname="Helvetica")
-    ax.set_ylabel("NMSE", fontsize=40, fontname="Helvetica")
+    ax.set_ylabel("tvNMSE", fontsize=40, fontname="Helvetica")
     ax.grid(True, alpha=0.3)
     ax.legend(loc="best", prop={"family": "Helvetica", "size": 25})
     ax.tick_params(axis="both", labelsize=25)
@@ -420,25 +583,29 @@ def _save_outputs(output_root: Path, case_results: dict):
 def _save_disagreement_outputs(output_root: Path, case_results: dict, disagreement_by_case: dict):
     dis_dir = output_root / "disagreement"
     dis_dir.mkdir(parents=True, exist_ok=True)
+    disagreement_case_ids = [case_id for case_id in case_results if not case_id.startswith("global_")]
+    if not disagreement_case_ids:
+        return
 
     md_lines = [
         "# Comparative Disagreement Summary (Last 10%)",
         "",
-        "| Metric | " + " | ".join(case_results[case_id]["label"] for case_id in case_results) + " |",
-        "|" + "---|" + "|".join("---:" for _ in case_results) + "|",
+        "| Metric | " + " | ".join(case_results[case_id]["label"] for case_id in disagreement_case_ids) + " |",
+        "|" + "---|" + "|".join("---:" for _ in disagreement_case_ids) + "|",
     ]
 
     for metric_name in DISAGREEMENT_METRICS:
         ylabel = METRIC_DISPLAY_LABELS.get(metric_name, metric_name)
         row_vals = []
-        for case_id in case_results:
+        for case_id in disagreement_case_ids:
             metric_values = disagreement_by_case[case_id].get(metric_name, np.array([], dtype=float))
             row_vals.append(_mean_last_fraction(metric_values, fraction=0.1))
         formatted = [("nan" if not np.isfinite(v) else f"{v:.6e}") for v in row_vals]
         md_lines.append(f"| {metric_name} | " + " | ".join(formatted) + " |")
 
         fig, ax = plt.subplots(figsize=(7.61, 6.65))
-        for idx, (case_id, result) in enumerate(case_results.items()):
+        for idx, case_id in enumerate(disagreement_case_ids):
+            result = case_results[case_id]
             series = disagreement_by_case[case_id].get(metric_name, np.array([], dtype=float))
             ax.plot(
                 series,
@@ -477,13 +644,33 @@ def main(cfg: DictConfig):
     case_results = {}
     for case_id, case_def in case_defs.items():
         cfg_case = _build_case_cfg(base_cfg=cfg, case_def=case_def)
-        result = _run_case(
-            cfg_case=cfg_case,
-            case_def=case_def,
-            cc_data=cc_data,
-            cellular_complex=cellular_complex,
-            forecast_horizon=forecast_horizon,
-        )
+        runner = case_def.get("runner", "distributed")
+        if runner == "distributed":
+            result = _run_distributed_case(
+                cfg_case=cfg_case,
+                case_def=case_def,
+                cc_data=cc_data,
+                cellular_complex=cellular_complex,
+                forecast_horizon=forecast_horizon,
+            )
+        elif runner == "global_ccvar_direct":
+            result = _run_global_ccvar_case(
+                cfg_case=cfg_case,
+                case_def=case_def,
+                cc_data=cc_data,
+                cellular_complex=cellular_complex,
+                forecast_horizon=forecast_horizon,
+            )
+        elif runner == "global_topolms_direct":
+            result = _run_global_topolms_case(
+                cfg_case=cfg_case,
+                case_def=case_def,
+                cc_data=cc_data,
+                cellular_complex=cellular_complex,
+                forecast_horizon=forecast_horizon,
+            )
+        else:
+            raise ValueError(f"Unknown runner '{runner}' for case '{case_id}'.")
         result["label"] = case_def["label"]
         result["family"] = case_def.get("family", "")
         result["case_id"] = case_id
