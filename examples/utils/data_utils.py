@@ -4,19 +4,49 @@ import numpy as np
 import scipy.io as sio  # type: ignore[import-untyped]
 
 
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _candidate_dataset_roots() -> list[Path]:
+    repo_root = _repo_root()
+    return [
+        # Primary: dataset folder tracked with this repository.
+        repo_root / "datasets",
+        # Secondary: legacy in-repo path.
+        repo_root / "data" / "Input",
+        # Secondary: historical sibling path used before this change.
+        repo_root.parent.parent / "data" / "Input",
+    ]
+
+
+def _resolve_dataset_paths(dataset_name: str, data_name: str, adjacencies_name: str) -> tuple[Path, Path]:
+    tried = []
+    for base in _candidate_dataset_roots():
+        data_path = base / dataset_name / data_name
+        adj_path = base / dataset_name / adjacencies_name
+        tried.append(str(base))
+        if data_path.is_file() and adj_path.is_file():
+            return data_path, adj_path
+    tried_msg = "\n  - ".join(tried)
+    raise FileNotFoundError(
+        f"Dataset files not found for '{dataset_name}'. Searched roots:\n  - {tried_msg}\n"
+        f"Expected files: {data_name}, {adjacencies_name}"
+    )
+
+
 def load_data(datasetParams):
     dataset_name = datasetParams.dataset_name
     data_name = datasetParams.data_name
     adjacencies_name = datasetParams.adj_name
-    current_dir = Path.cwd()
-    root_name = (current_dir / ".." / ".." / "data" / "Input").resolve()
 
-    try:
-        m = sio.loadmat(root_name / dataset_name / data_name)
-        topology = sio.loadmat(root_name / dataset_name / adjacencies_name)
-    except FileNotFoundError:
-        print("Error: Data files not found. Check paths.")
-        exit()
+    data_path, adj_path = _resolve_dataset_paths(
+        dataset_name=dataset_name,
+        data_name=data_name,
+        adjacencies_name=adjacencies_name,
+    )
+    m = sio.loadmat(data_path)
+    topology = sio.loadmat(adj_path)
 
     try: signal_node = m["l"].T.astype(float)
     except: signal_node = None
@@ -44,8 +74,8 @@ def load_data(datasetParams):
 
 
 def get_output_dir(dataset_name):
-    current_dir = Path.cwd()
-    output_dir = lambda dim: (current_dir / ".." / ".." / "data" / "Output" / dataset_name / f"Results_{dim}").resolve()
+    repo_root = _repo_root()
+    output_dir = lambda dim: (repo_root / "outputs" / dataset_name / f"Results_{dim}").resolve()
     return output_dir
 
 
