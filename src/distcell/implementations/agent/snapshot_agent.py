@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.core.agent import BaseAgent
+from distcell.core.agent import BaseAgent
 
 
 class SnapshotAgent(BaseAgent):

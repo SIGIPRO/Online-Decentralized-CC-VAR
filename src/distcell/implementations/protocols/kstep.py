@@ -1,4 +1,4 @@
-from src.core import BaseProtocol
+from distcell.core import BaseProtocol
 
 class KStepProtocol(BaseProtocol):
     """

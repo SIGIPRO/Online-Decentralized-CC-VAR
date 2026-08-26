@@ -1,4 +1,4 @@
-from src.core import BaseMixingModel
+from distcell.core import BaseMixingModel
 import numpy as np
 
 

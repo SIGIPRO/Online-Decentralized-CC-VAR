@@ -1,5 +1,5 @@
 from ccvar import CCVAR
-from src.core import BaseModel
+from distcell.core import BaseModel
 import numpy as np
 import copy
 

@@ -14,8 +14,8 @@ from cellexp_util.registry.metric_registry import ensure_metrics_registered
 from examples.utils.clustering_utils import create_cluster_agents
 from examples.utils.data_utils import load_data
 from examples.utils.metric_utils import evaluate_pending_predictions, init_metric_managers
-from src.cc_utils.ccdata import CellularComplexInMemoryData
-from src.implementations.agent import SnapshotAgent
+from distcell.cc_utils.ccdata import CellularComplexInMemoryData
+from distcell.implementations.agent import SnapshotAgent
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -97,11 +97,11 @@ def _run_distributed_edge_case(
     use_static_topolms = model_target.endswith("topoLMSPartialEdgeModel")
     use_snapshot_agents = use_static_ccvar or use_static_topolms
     if use_static_ccvar:
-        from src.implementations.models.ccvar import CCVARPartialEdgeModel
+        from distcell.implementations.models.ccvar import CCVARPartialEdgeModel
 
         CCVARPartialEdgeModel.reset_shared_state()
     if use_static_topolms:
-        from src.implementations.models.topolms import topoLMSPartialEdgeModel
+        from distcell.implementations.models.topolms import topoLMSPartialEdgeModel
 
         topoLMSPartialEdgeModel.reset_shared_state()
 

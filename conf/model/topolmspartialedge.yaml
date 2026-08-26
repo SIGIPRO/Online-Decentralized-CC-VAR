@@ -2,7 +2,7 @@ defaults:
   - topolms_common
   - _self_
 
-_target_: src.implementations.models.topolms.topoLMSPartialEdgeModel
+_target_: distcell.implementations.models.topolms.topoLMSPartialEdgeModel
 algorithmParam:
   signal_key: 1
   in_idx: {}

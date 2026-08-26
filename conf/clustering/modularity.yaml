@@ -1,4 +1,4 @@
-_target_: src.cc_utils.clustering.ModularityBasedClustering
+_target_: distcell.cc_utils.clustering.ModularityBasedClustering
 clusteringParameters:
   position_path: ../../data/Input/noaa_coastwatch_cellular/longlat.mat
   position_name: longlat

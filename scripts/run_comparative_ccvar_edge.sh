@@ -23,7 +23,7 @@ if [[ "${MODE}" == "atc" ]]; then
   python3 -m examples.comparative_exp \
     experiment=comparative_exp \
     'experiment.run.enabled_cases=[ccvar_kgt]' \
-    experiment.cases.ccvar_kgt.mixing._target_=src.implementations.mixing.diffusion_atc.DiffusionATCModel \
+    experiment.cases.ccvar_kgt.mixing._target_=distcell.implementations.mixing.diffusion_atc.DiffusionATCModel \
     experiment.cases.ccvar_kgt.mixing.initial_aux_vars={} \
     experiment.cases.ccvar_kgt.mixing.eta={}
 elif [[ "${MODE}" == "kgt" ]]; then
@@ -31,7 +31,7 @@ elif [[ "${MODE}" == "kgt" ]]; then
   python3 -m examples.comparative_exp \
     experiment=comparative_exp \
     'experiment.run.enabled_cases=[ccvar_kgt]' \
-    experiment.cases.ccvar_kgt.mixing._target_=src.implementations.mixing.kgt.KGTMixingModel \
+    experiment.cases.ccvar_kgt.mixing._target_=distcell.implementations.mixing.kgt.KGTMixingModel \
     experiment.cases.ccvar_kgt.mixing.eta.c="${C}" \
     experiment.cases.ccvar_kgt.mixing.eta.s="${S}" \
     experiment.cases.ccvar_kgt.mixing.eta.K="${K}" \

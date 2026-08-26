@@ -1,1 +1,1 @@
-_target_: src.implementations.imputer.data_holder.DataHolder
+_target_: distcell.implementations.imputer.data_holder.DataHolder

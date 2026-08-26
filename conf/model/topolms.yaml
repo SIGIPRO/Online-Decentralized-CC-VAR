@@ -2,5 +2,5 @@ defaults:
   - topolms_common
   - _self_
 
-_target_: src.implementations.models.topolms.topoLMSModel
+_target_: distcell.implementations.models.topolms.topoLMSModel
 

@@ -20,7 +20,7 @@ from examples.utils.metric_utils import (
     init_metric_managers,
     keep_only_metrics,
 )
-from src.implementations.models.topolms import topoLMS
+from distcell.implementations.models.topolms import topoLMS
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -111,7 +111,7 @@ def _to_plain(value):
 
 def _modularity_clustering_cfg(base_cfg: DictConfig):
     return {
-        "_target_": "src.cc_utils.clustering.ModularityBasedClustering",
+        "_target_": "distcell.cc_utils.clustering.ModularityBasedClustering",
         "clusteringParameters": _to_plain(base_cfg.clustering.clusteringParameters),
     }
 
@@ -123,7 +123,7 @@ def _build_test_cases(base_cfg: DictConfig):
     }
     clustering_cfg = _modularity_clustering_cfg(base_cfg=base_cfg)
     topolms_model_cfg = {
-        "_target_": "src.implementations.models.topolms.topoLMSPartialModel",
+        "_target_": "distcell.implementations.models.topolms.topoLMSPartialModel",
         "_convert_": "partial",
         "algorithmParam": {
             "signal_key": EDGE_DIM,
@@ -135,7 +135,7 @@ def _build_test_cases(base_cfg: DictConfig):
         },
     }
     ccvar_model_cfg = {
-        "_target_": "src.implementations.models.ccvar.CCVARPartialModel",
+        "_target_": "distcell.implementations.models.ccvar.CCVARPartialModel",
         "_convert_": "partial",
         "algorithmParam": {
             "Tstep": 1,
@@ -153,13 +153,13 @@ def _build_test_cases(base_cfg: DictConfig):
         },
     }
     kgt_mixing_cfg = {
-        "_target_": "src.implementations.mixing.kgt.KGTMixingModel",
+        "_target_": "distcell.implementations.mixing.kgt.KGTMixingModel",
         "_convert_": "all",
         "eta": _to_plain(base_cfg.mixing.eta),
         "initial_aux_vars": _to_plain(base_cfg.mixing.initial_aux_vars),
     }
     atc_mixing_cfg = {
-        "_target_": "src.implementations.mixing.diffusion_atc.DiffusionATCModel",
+        "_target_": "distcell.implementations.mixing.diffusion_atc.DiffusionATCModel",
         "_convert_": "all",
         "initial_aux_vars": {},
         "eta": {},

@@ -2,4 +2,4 @@ defaults:
   - ccvar_common
   - _self_
 
-_target_: src.implementations.models.ccvar.CCVARModel
+_target_: distcell.implementations.models.ccvar.CCVARModel

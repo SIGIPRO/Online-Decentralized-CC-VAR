@@ -4,8 +4,8 @@ import numpy as np
 from hydra.utils import instantiate
 from tqdm import tqdm  # type: ignore[import-untyped]
 
-from src.core import BaseAgent
-from src.implementations.agent import SnapshotAgent
+from distcell.core import BaseAgent
+from distcell.implementations.agent import SnapshotAgent
 from examples.utils.data_utils import build_partial_indices
 
 

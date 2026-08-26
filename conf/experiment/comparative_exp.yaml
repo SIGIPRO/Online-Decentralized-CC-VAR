@@ -13,10 +13,10 @@ cases:
       C_data: 1
       C_param: 1
     clustering:
-      _target_: src.cc_utils.clustering.OnlyEdgesClustering
+      _target_: distcell.cc_utils.clustering.OnlyEdgesClustering
       clusteringParameters: {}
     model:
-      _target_: src.implementations.models.topolms.topoLMSPartialEdgeModel
+      _target_: distcell.implementations.models.topolms.topoLMSPartialEdgeModel
       _convert_: partial
       algorithmParam:
         signal_key: 1
@@ -26,7 +26,7 @@ cases:
         in_idx: {}
         out_idx: {}
     mixing:
-      _target_: src.implementations.mixing.diffusion_atc.DiffusionATCModel
+      _target_: distcell.implementations.mixing.diffusion_atc.DiffusionATCModel
       _convert_: all
       initial_aux_vars: {}
       eta: {}
@@ -39,10 +39,10 @@ cases:
       C_data: 1
       C_param: 1
     clustering:
-      _target_: src.cc_utils.clustering.OnlyEdgesClustering
+      _target_: distcell.cc_utils.clustering.OnlyEdgesClustering
       clusteringParameters: {}
     model:
-      _target_: src.implementations.models.ccvar.CCVARPartialEdgeModel
+      _target_: distcell.implementations.models.ccvar.CCVARPartialEdgeModel
       _convert_: partial
       algorithmParam:
         Tstep: 1
@@ -67,7 +67,7 @@ cases:
         in_idx: {}
         out_idx: {}
     mixing:
-      _target_: src.implementations.mixing.kgt.KGTMixingModel
+      _target_: distcell.implementations.mixing.kgt.KGTMixingModel
       _convert_: all
       eta:
         K: 1

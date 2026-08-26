@@ -1,4 +1,4 @@
-from src.core import BaseImputer
+from distcell.core import BaseImputer
 
 class ZeroPadder(BaseImputer):
     def __init__(self, **kwargs):

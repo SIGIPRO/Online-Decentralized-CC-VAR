@@ -4,12 +4,12 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 from tqdm import tqdm  # type: ignore[import-untyped]
 
-from src.core import BaseAgent
+from distcell.core import BaseAgent
 
 
 def _build_global_ccvar_model_cfg(cfg: DictConfig):
     model_cfg = OmegaConf.create(OmegaConf.to_container(cfg.model, resolve=True))
-    model_cfg._target_ = "src.implementations.models.ccvar.CCVARModel"
+    model_cfg._target_ = "distcell.implementations.models.ccvar.CCVARModel"
     algorithm_param = deepcopy(model_cfg.get("algorithmParam", {}))
     algorithm_param.pop("in_idx", None)
     algorithm_param.pop("out_idx", None)

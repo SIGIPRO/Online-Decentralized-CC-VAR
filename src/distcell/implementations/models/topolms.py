@@ -1,11 +1,13 @@
 import numpy as np
-from src.core import BaseModel
+from distcell.core import BaseModel
 
 
 def _extract_index_list(raw_idx, signal_key):
     if isinstance(raw_idx, dict):
         if signal_key in raw_idx:
             raw_idx = raw_idx[signal_key]
+        elif len(raw_idx) == 0:
+            raw_idx = []
         elif len(raw_idx) == 1:
             raw_idx = next(iter(raw_idx.values()))
         else:

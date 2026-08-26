@@ -305,7 +305,7 @@ def _force_boundary_model_to_partial_in(cfg: DictConfig):
     cfg_local = deepcopy(cfg)
     if "model" not in cfg_local:
         raise ValueError("Config must contain a model section.")
-    cfg_local.model._target_ = "src.implementations.models.ccvar.CCVARPartialInModel"
+    cfg_local.model._target_ = "distcell.implementations.models.ccvar.CCVARPartialInModel"
     return cfg_local
 
 

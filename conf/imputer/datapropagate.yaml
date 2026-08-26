@@ -1,4 +1,4 @@
-_target_: src.implementations.imputer.label_propagator.LabelPropagator
+_target_: distcell.implementations.imputer.label_propagator.LabelPropagator
 lambda:
   - 0.01
   - 0.01
